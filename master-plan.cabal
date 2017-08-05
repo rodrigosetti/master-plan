@@ -42,6 +42,7 @@ test-suite spec
                   , master-plan
                   , random
                   , mtl
+                  , containers
                   , hspec
                   , QuickCheck
   other-modules:    MasterPlan.DataSpec

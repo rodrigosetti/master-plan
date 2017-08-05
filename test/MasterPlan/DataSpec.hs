@@ -1,6 +1,7 @@
 module MasterPlan.DataSpec where
 
 import           Data.Bool           (bool)
+import qualified Data.Map            as M
 import           MasterPlan.Data
 import           Test.Hspec
 import           Test.QuickCheck     hiding (sample)
@@ -29,63 +30,96 @@ instance Arbitrary Status where
 
   arbitrary = oneof [ pure Ready, pure Blocked, pure InProgress, pure Done, pure Cancelled ]
 
+testingKeys :: [String]
+testingKeys = ["a","b","c","d"]
+
+rootKey :: String
+rootKey = "root"
+
+instance Arbitrary ProjectSystem where
+
+  arbitrary = do bs <- replicateM (length testingKeys) arbitrary
+                 let arbitraryExpr = ExpressionProj <$> arbitrary <*> arbitrary
+                 rootB <- frequency [ (1, arbitrary), (10, arbitraryExpr) ]
+                 let bindings = M.insert rootKey rootB $ M.fromList $ zip testingKeys bs
+                 pure $ ProjectSystem bindings
+
+  shrink (ProjectSystem bs) =
+      map ProjectSystem $ concatMap shrinkOne testingKeys
+    where
+      shrinkOne :: String -> [M.Map String ProjectBinding]
+      shrinkOne k = case M.lookup k bs of
+        Nothing -> []
+        Just b  -> map (\s -> M.adjust (const s) k bs) $ shrink b
+
+instance Arbitrary ProjectBinding where
+
+  -- NOTE: ProjectBinding arbitrary are always tasks (no expression)
+  --       to avoid generating cycles
+  arbitrary =
+    let unitGen = choose (0.0, 1.0)
+     in TaskProj <$> arbitrary
+                 <*> unitGen
+                 <*> unitGen
+                 <*> arbitrary
+                 <*> unitGen
+
 instance Arbitrary Project where
 
   arbitrary =
     let shrinkFactor n = 2 * n `quot` 5
-        unitGen = choose (0.0, 1.0)
-    in  oneof [ SumProj <$> arbitrary <*> scale shrinkFactor arbitrary
-              , ProductProj <$> arbitrary <*> scale shrinkFactor arbitrary
-              , SequenceProj <$> arbitrary <*> scale shrinkFactor arbitrary
-              , TaskProj <$> arbitrary
-                         <*> unitGen
-                         <*> unitGen
-                         <*> arbitrary
-                         <*> unitGen ]
+    in  oneof [ SumProj <$> scale shrinkFactor arbitrary
+              , ProductProj <$> scale shrinkFactor arbitrary
+              , SequenceProj <$> scale shrinkFactor arbitrary
+              , RefProj <$> elements testingKeys ]
 
-  shrink (SumProj p ps)      = map (SumProj p) (shrink ps) ++ NE.toList ps
-  shrink (ProductProj p ps)  = map (ProductProj p) (shrink ps) ++ NE.toList ps
-  shrink (SequenceProj p ps) = map (SequenceProj p) (shrink ps) ++ NE.toList ps
-  shrink TaskProj {}         = []
+  shrink (SumProj ps)      = map SumProj (shrink ps) ++ NE.toList ps
+  shrink (ProductProj ps)  = map ProductProj (shrink ps) ++ NE.toList ps
+  shrink (SequenceProj ps) = map SequenceProj (shrink ps) ++ NE.toList ps
+  shrink (RefProj _)       = []
 
 average :: RandomGen g => State g Float -> Int -> State g Float
 average sample n = do total <- replicateM n sample
                       pure $ sum total / fromIntegral n
 
-simulate :: RandomGen g => Project -> State g (Bool, Cost)
-simulate TaskProj { reportedConfidence=t, reportedCost=c } =
-  do n <- state $ randomR (0, 1)
-     pure (t > n, c)
+simulate :: RandomGen g => ProjectSystem -> Project -> State g (Bool, Cost)
+simulate sys (RefProj n) =
+   case M.lookup n (bindings sys) of
+     Just TaskProj { reportedTrust=t, reportedCost=c }    ->
+       do r <- state $ randomR (0, 1)
+          pure (t > r, c)
+     Just ExpressionProj { expression=p} -> simulate sys p -- TODO: avoid cyclic
+     Nothing                             -> pure (False, 0) -- should not happen
 
-simulate SequenceProj { subprojects=ps }   = simulateConjunction $ NE.dropWhile isClosed ps
-simulate ProductProj { subprojects=ps }    = simulateConjunction $ NE.filter isOpen ps
-simulate SumProj { subprojects=ps }        =
+simulate sys SequenceProj { subprojects=ps }   = simulateConjunction sys $ NE.dropWhile (isClosed sys) ps
+simulate sys ProductProj { subprojects=ps }    = simulateConjunction sys $ NE.filter (isOpen sys) ps
+simulate sys SumProj { subprojects=ps }        =
   if null opens then pure (True, 0) else simulate' opens
  where
-   opens = NE.filter isOpen ps
+   opens = NE.filter (isOpen sys) ps
    simulate' :: RandomGen g => [Project] -> State g (Bool, Cost)
    simulate' [] = pure (False, 0)
-   simulate' (p:rest) = do (success, c) <- simulate p
+   simulate' (p:rest) = do (success, c) <- simulate sys p
                            if success then
                              pure (True, c)
                            else
                              do (success', c') <- simulate' rest
                                 pure (success', c + c')
 
-simulateConjunction :: RandomGen g => [Project] -> State g (Bool, Cost)
-simulateConjunction []       = pure (True, 0)
-simulateConjunction (p:rest) = do (success, c) <- simulate p
-                                  if success then do
-                                     (success', c') <- simulateConjunction rest
-                                     pure (success', c + c')
-                                   else
-                                     pure (False, c)
+simulateConjunction :: RandomGen g => ProjectSystem -> [Project] -> State g (Bool, Cost)
+simulateConjunction _ []       = pure (True, 0)
+simulateConjunction sys (p:rest) = do (success, c) <- simulate sys p
+                                      if success then do
+                                        (success', c') <- simulateConjunction sys rest
+                                        pure (success', c + c')
+                                      else
+                                        pure (False, c)
 
-monteCarloConfidenceAndCost :: RandomGen g => Int -> Project -> State g (Percentage, Cost)
-monteCarloConfidenceAndCost n p = do results <- replicateM n $ simulate p
-                                     let confidences = map (bool 0 1 . fst) results
+monteCarloTrusteAndCost :: RandomGen g => Int -> ProjectSystem -> Project -> State g (Trust, Cost)
+monteCarloTrusteAndCost n sys p = do results <- replicateM n $ simulate sys p
+                                     let trusts = map (bool 0 1 . fst) results
                                      let costs = map snd results
-                                     pure (sum confidences / fromIntegral n,
+                                     pure (sum trusts / fromIntegral n,
                                            sum costs / fromIntegral n)
 
 aproximatelyEqual :: Float -> Float -> Property
@@ -101,45 +135,53 @@ spec = do
     let g = mkStdGen 837183
 
     it "monte-carlo and analytical implementations should agree on cost" $ do
-      let propertyMCAndAnalyticalEq :: Project -> Property
-          propertyMCAndAnalyticalEq p =
-            cost' `aproximatelyEqual` cost p
+      let propertyMCAndAnalyticalEq :: ProjectSystem -> Property
+          propertyMCAndAnalyticalEq sys =
+            cost' `aproximatelyEqual` cost sys p
            where
-             (_, cost') = evalState (monteCarloConfidenceAndCost 10000 p) g
+             p = RefProj rootKey
+             (_, cost') = evalState (monteCarloTrusteAndCost 10000 sys p) g
 
       property propertyMCAndAnalyticalEq
 
-    it "monte-carlo and analytical implementations should agree on confidence" $ do
-        let propertyMCAndAnalyticalEq :: Project -> Property
-            propertyMCAndAnalyticalEq p =
-              confidence' `aproximatelyEqual` confidence p
+    it "monte-carlo and analytical implementations should agree on trust" $ do
+        let propertyMCAndAnalyticalEq :: ProjectSystem -> Property
+            propertyMCAndAnalyticalEq sys =
+              trust' `aproximatelyEqual` trust sys p
              where
-               (confidence', _) = evalState (monteCarloConfidenceAndCost 10000 p) g
+               p = RefProj rootKey
+               (trust', _) = evalState (monteCarloTrusteAndCost 10000 sys p) g
 
         property propertyMCAndAnalyticalEq
 
   describe "cost" $ do
-    let p1 = defaultTaskProj { reportedCost = 10
-                             , reportedConfidence = 0.8
-                             , reportedProgress=1
-                             , reportedStatus = Done }
-    let p2 = defaultTaskProj { reportedCost = 5
-                             , reportedConfidence = 1
-                             , reportedProgress = 0.2
-                             , reportedStatus = InProgress }
-    let p3 = defaultTaskProj { reportedCost = 7
-                             , reportedConfidence = 1
-                             , reportedProgress = 0
-                             , reportedStatus = Ready }
-    let p4 = defaultTaskProj { reportedCost = 2
-                             , reportedConfidence = 1
-                             , reportedProgress = 0
-                             , reportedStatus = Ready }
+    let p1 = TaskProj { props=defaultProjectProps
+                     , reportedCost = 10
+                     , reportedTrust = 0.8
+                     , reportedProgress=1
+                     , reportedStatus = Done }
+    let p2 = TaskProj { props=defaultProjectProps
+                     , reportedCost = 5
+                     , reportedTrust = 1
+                     , reportedProgress = 0.2
+                     , reportedStatus = InProgress }
+    let p3 = TaskProj { props=defaultProjectProps
+                      , reportedCost = 7
+                      , reportedTrust = 1
+                      , reportedProgress = 0
+                      , reportedStatus = Ready }
+    let p4 = TaskProj { props=defaultProjectProps
+                     , reportedCost = 2
+                     , reportedTrust = 1
+                     , reportedProgress = 0
+                     , reportedStatus = Ready }
 
     it "is correct for sequences" $ do
-      let p = SequenceProj defaultProjectProps $ NE.fromList [p1, p2, p3, p4]
-      cost p `shouldBe` 14
+      let p = SequenceProj $ NE.fromList $ map RefProj ["p1", "p2", "p3", "p4"]
+          sys = ProjectSystem $ M.fromList $ zip ["p1", "p2", "p3", "p4"] [p1, p2, p3, p4]
+      cost sys p `shouldBe` 14
 
     it "is correct for products" $ do
-      let p = ProductProj defaultProjectProps $ NE.fromList [p1, p2, p3, p4]
-      cost p `shouldBe` 14
+      let p = ProductProj $ NE.fromList $ map RefProj ["p1", "p2", "p3", "p4"]
+          sys = ProjectSystem $ M.fromList $ zip ["p1", "p2", "p3", "p4"] [p1, p2, p3, p4]
+      cost sys p `shouldBe` 14

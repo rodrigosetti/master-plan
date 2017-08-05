@@ -3,122 +3,144 @@ module MasterPlan.Data where
 import           Data.Foldable      (asum)
 import           Data.List          (find, inits)
 import qualified Data.List.NonEmpty as NE
+import qualified Data.Map           as M
 import           Data.Maybe         (fromMaybe)
 
-type Percentage = Float
+type Trust = Float
 type Cost = Float
-
--- | properties that common to composed and atomic projects
-data ProjectProperties = ProjectProperties {
-  name        :: String,
-  description :: Maybe[String],
-  url         :: Maybe[String],
-  owner       :: Maybe[String]
-} deriving (Eq, Show)
+type Progress = Float
 
 data Status = Ready | Blocked | InProgress | Done | Cancelled
           deriving (Eq, Show)
 
+-- |Structure of a project expression
 data Project = SumProj {
-                  props       :: ProjectProperties,
                   subprojects :: NE.NonEmpty Project
                } |
                ProductProj {
-                  props       :: ProjectProperties,
                   subprojects :: NE.NonEmpty Project
                } |
                SequenceProj {
-                  props       :: ProjectProperties,
                   subprojects :: NE.NonEmpty Project
                } |
-               TaskProj {
-                  props              :: ProjectProperties,
-                  reportedCost       :: Cost,
-                  reportedConfidence :: Percentage,
-                  reportedStatus     :: Status,
-                  reportedProgress   :: Percentage
+               RefProj {
+                  name :: String
                }
                 deriving (Eq, Show)
 
+-- |A binding of a name can refer to an expression. If there are no
+-- associated expressions (i.e. equation) then it can have task-level
+-- properties
+data ProjectBinding = TaskProj { props            :: ProjectProperties
+                               , reportedCost     :: Cost
+                               , reportedTrust    :: Trust
+                               , reportedStatus   :: Status
+                               , reportedProgress :: Progress
+                               } |
+                      ExpressionProj { props      :: ProjectProperties
+                                     , expression :: Project
+                                     }
+                         deriving (Eq, Show)
+
+-- |Any binding (with a name) may have associated properties
+data ProjectProperties = ProjectProperties { title       :: String
+                                           , description :: Maybe[String]
+                                           , url         :: Maybe[String]
+                                           , owner       :: Maybe[String]
+                                           } deriving (Eq, Show)
+
+-- |A project system defines the bindins (mapping from names to expressions or tasks)
+-- and properties, which can be associated to any binding
+newtype ProjectSystem = ProjectSystem { bindings :: M.Map String ProjectBinding }
+                          deriving (Eq, Show)
 
 defaultProjectProps :: ProjectProperties
-defaultProjectProps = ProjectProperties { name = "root"
+defaultProjectProps = ProjectProperties { title = "root"
                                         , description = Nothing
                                         , url = Nothing
                                         , owner = Nothing }
 
-defaultTaskProj :: Project
-defaultTaskProj = TaskProj { props = defaultProjectProps
-                           , reportedCost = 0
-                           , reportedConfidence = 1
-                           , reportedStatus = Ready
-                           , reportedProgress = 0 }
+isOpen :: ProjectSystem -> Project -> Bool
+isOpen sys p = status sys p `elem` [InProgress, Ready, Blocked]
 
-isOpen :: Project -> Bool
-isOpen p = status p `elem` [InProgress, Ready, Blocked]
-
-isClosed :: Project -> Bool
-isClosed = not . isOpen
+isClosed :: ProjectSystem -> Project -> Bool
+isClosed sys p = not $ isOpen sys p
 
 -- | Expected cost
-cost :: Project -> Cost
-cost TaskProj { reportedCost=c } = c
-cost SequenceProj { subprojects=ps } = costConjunction $ NE.dropWhile isClosed ps
-cost ProductProj { subprojects=ps } = costConjunction $ NE.filter isOpen ps
-cost SumProj { subprojects=s } =
-   final_cost
+cost :: ProjectSystem -> Project -> Cost
+cost sys (RefProj n) =
+  case M.lookup n (bindings sys) of
+    Just TaskProj { reportedCost=c }    -> c
+    Just ExpressionProj { expression=p} -> cost sys p -- TODO: avoid cyclic
+    Nothing                             -> 0 -- should not happen
+cost sys SequenceProj { subprojects=ps } = costConjunction sys $ NE.dropWhile (isClosed sys) ps
+cost sys ProductProj { subprojects=ps } = costConjunction sys $ NE.filter (isOpen sys) ps
+cost sys SumProj { subprojects=s } =
+   sum $ map (\x -> (1 - snd x) * fst x) $ zip costs accTrusts
  where
-   final_prob = scanl (\a b -> a + b*(1-a)) 0 $ map confidence opens
-   final_cost = sum $ map (\x -> (1 - snd x) * fst x) $ zip costs final_prob
-   costs = map cost opens
-   opens = NE.filter isOpen s
+   accTrusts = scanl (\a b -> a + b*(1-a)) 0 $ map (trust sys) opens
+   costs = map (cost sys) opens
+   opens = NE.filter (isOpen sys) s
 
-costConjunction :: [Project] -> Cost
-costConjunction ps =
-   sum $ zipWith (*) costs accConfidences
+costConjunction :: ProjectSystem -> [Project] -> Cost
+costConjunction sys ps =
+   sum $ zipWith (*) costs accTrusts
   where
-    costs = map cost ps
-    accConfidences = map product $ inits $ map confidence ps
+    costs = map (cost sys) ps
+    accTrusts = map product $ inits $ map (trust sys) ps
 
--- | Expected confidence probability
-confidence :: Project -> Percentage
-confidence TaskProj { reportedConfidence=c } = c
-confidence SequenceProj { subprojects=ps } = confidenceConjunction $ NE.dropWhile isClosed ps
-confidence ProductProj { subprojects=ps } = confidenceConjunction $ NE.filter isOpen ps
-confidence SumProj { subprojects=s } =
-  if null opens then 1 else final_prob
+-- | Expected trust probability
+trust :: ProjectSystem -> Project -> Trust
+trust sys (RefProj n) =
+  case M.lookup n (bindings sys) of
+    Just TaskProj { reportedTrust=t }   -> t
+    Just ExpressionProj { expression=p} -> trust sys p -- TODO: avoid cyclic
+    Nothing                             -> 0 -- should not happen
+trust sys SequenceProj { subprojects=ps } = trustConjunction sys $ NE.dropWhile (isClosed sys) ps
+trust sys ProductProj { subprojects=ps } = trustConjunction sys $ NE.filter (isOpen sys) ps
+trust sys SumProj { subprojects=s } =
+  if null opens then 1 else accTrusts
  where
-  final_prob = foldl (\a b -> a + b*(1-a)) 0 $ map confidence opens
-  opens = NE.filter isOpen s
+  accTrusts = foldl (\a b -> a + b*(1-a)) 0 $ map (trust sys) opens
+  opens = NE.filter (isOpen sys) s
 
-confidenceConjunction :: [Project] -> Percentage
-confidenceConjunction ps = product $ map confidence ps
+trustConjunction :: ProjectSystem -> [Project] -> Trust
+trustConjunction sys ps = product $ map (trust sys) ps
 
-progress :: Project -> Percentage
-progress TaskProj { reportedProgress=p, reportedStatus=s } = if s == Done then 1 else p
-progress SequenceProj { subprojects=s } = progressConjunction s
-progress ProductProj { subprojects=s } = progressConjunction s
-progress SumProj { subprojects=s } = maximum $ NE.map progress s
+progress ::ProjectSystem -> Project -> Progress
+progress sys (RefProj n) =
+  case M.lookup n (bindings sys) of
+    Just TaskProj { reportedStatus=Done } -> 1
+    Just TaskProj { reportedProgress=p }  -> p
+    Just ExpressionProj { expression=p}   -> progress sys p -- TODO: avoid cyclic
+    Nothing                               -> 0 -- should not happen
+progress sys SequenceProj { subprojects=s }   = progressConjunction sys s
+progress sys ProductProj { subprojects=s }    = progressConjunction sys s
+progress sys SumProj { subprojects=s }        = maximum $ NE.map (progress sys) s
 
-progressConjunction :: NE.NonEmpty Project -> Percentage
-progressConjunction ps =
-   let opens = NE.filter isOpen ps
+progressConjunction :: ProjectSystem -> NE.NonEmpty Project -> Progress
+progressConjunction sys ps =
+   let opens = NE.filter (isOpen sys) ps
     in if null opens
       then 1
-      else sum (map progress opens) / fromIntegral (length opens)
+      else sum (map (progress sys) opens) / fromIntegral (length opens)
 
-status :: Project -> Status
-status TaskProj { reportedProgress=p, reportedStatus=s } = if p >= 1 then Done else s
-status SequenceProj { subprojects=s } =
-  let rest = NE.dropWhile isClosed s
-  in case rest of (p : _) -> status p
+status :: ProjectSystem -> Project -> Status
+status sys (RefProj n) =
+  case M.lookup n (bindings sys) of
+    Just TaskProj { reportedProgress=p, reportedStatus=s }  -> if p>=1 then Done else s
+    Just ExpressionProj { expression=p}  -> status sys p -- TODO: avoid cyclic
+    Nothing                                        -> Cancelled -- should not happen
+status sys SequenceProj { subprojects=s } =
+  let rest = NE.dropWhile (isClosed sys) s
+  in case rest of (p : _) -> status sys p
                   []      -> Done
-status ProductProj { subprojects=ps } =
-  statusPriority [InProgress, Ready, Blocked, Cancelled, Done] ps
-status SumProj { subprojects=ps } =
-  statusPriority [Done, InProgress, Ready, Blocked, Cancelled] ps
+status sys ProductProj { subprojects=ps } =
+  statusPriority [InProgress, Ready, Blocked, Cancelled, Done] sys ps
+status sys SumProj { subprojects=ps } =
+  statusPriority [Done, InProgress, Ready, Blocked, Cancelled] sys ps
 
-statusPriority :: [Status] -> NE.NonEmpty Project -> Status
-statusPriority priority ps =
-  let ss = NE.map status ps
+statusPriority :: [Status] -> ProjectSystem -> NE.NonEmpty Project -> Status
+statusPriority priority sys ps =
+  let ss = NE.map (status sys) ps
    in fromMaybe Done $ asum $ map (\x -> find (x ==) ss) priority
