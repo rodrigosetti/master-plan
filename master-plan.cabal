@@ -2,9 +2,13 @@ name:                master-plan
 version:             0.1.0.0
 synopsis:            Text based project management tool
 -- description:
-homepage:            https://github.com/rsetti/master-plan#readme
+homepage:            https://github.com/rodrigosetti/master-plan
+bug-reports:         https://github.com/rodrigosetti/master-plan/issues
 author:              Rodrigo Setti
 maintainer:          rodrigosetti@gmail.com
+stability:           alpha
+license:             MIT
+license-file:        LICENSE
 copyright:           2017 Rodrigo Setti. All rights reserved
 category:            Tools
 build-type:          Simple
@@ -27,6 +31,7 @@ library
     default-language:    Haskell2010
     ghc-options:         -Wall
     default-extensions:  OverloadedStrings
+                       , UnicodeSyntax
     build-depends:       base
                        , megaparsec
                        , containers

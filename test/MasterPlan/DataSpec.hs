@@ -1,3 +1,4 @@
+{-# LANGUAGE UnicodeSyntax #-}
 module MasterPlan.DataSpec where
 
 import           Data.Bool           (bool)
@@ -8,6 +9,7 @@ import           Test.QuickCheck     hiding (sample)
 
 import           Control.Applicative ((<$>), (<*>))
 import           Control.Monad.State
+import           Data.List           (nub)
 import qualified Data.List.NonEmpty  as NE
 import           System.Random
 
@@ -28,12 +30,15 @@ instance Arbitrary ProjectProperties where
 
 instance Arbitrary Status where
 
-  arbitrary = oneof [ pure Ready, pure Blocked, pure InProgress, pure Done, pure Cancelled ]
+  arbitrary = elements [ Ready, Blocked, InProgress, Done, Cancelled ]
 
-testingKeys :: [String]
+  shrink Done = []
+  shrink _    = [Done]
+
+testingKeys ∷ [String]
 testingKeys = ["a","b","c","d"]
 
-rootKey :: String
+rootKey ∷ String
 rootKey = "root"
 
 instance Arbitrary ProjectSystem where
@@ -41,13 +46,12 @@ instance Arbitrary ProjectSystem where
   arbitrary = do bs <- replicateM (length testingKeys) arbitrary
                  let arbitraryExpr = ExpressionProj <$> arbitrary <*> arbitrary
                  rootB <- frequency [ (1, arbitrary), (10, arbitraryExpr) ]
-                 let bindings = M.insert rootKey rootB $ M.fromList $ zip testingKeys bs
-                 pure $ ProjectSystem bindings
+                 pure $ ProjectSystem $ M.insert rootKey rootB $ M.fromList $ zip testingKeys bs
 
   shrink (ProjectSystem bs) =
       map ProjectSystem $ concatMap shrinkOne testingKeys
     where
-      shrinkOne :: String -> [M.Map String ProjectBinding]
+      shrinkOne ∷ String → [M.Map String ProjectBinding]
       shrinkOne k = case M.lookup k bs of
         Nothing -> []
         Just b  -> map (\s -> M.adjust (const s) k bs) $ shrink b
@@ -64,6 +68,12 @@ instance Arbitrary ProjectBinding where
                  <*> arbitrary
                  <*> unitGen
 
+  shrink b = nub [ b { reportedCost=0 }
+                 , b { reportedCost=1 }
+                 , b { reportedTrust=0 }
+                 , b { reportedTrust=1 }
+                 , b { reportedStatus=Done } ]
+
 instance Arbitrary Project where
 
   arbitrary =
@@ -78,11 +88,11 @@ instance Arbitrary Project where
   shrink (SequenceProj ps) = map SequenceProj (shrink ps) ++ NE.toList ps
   shrink (RefProj _)       = []
 
-average :: RandomGen g => State g Float -> Int -> State g Float
+average ∷ RandomGen g ⇒ State g Float → Int → State g Float
 average sample n = do total <- replicateM n sample
                       pure $ sum total / fromIntegral n
 
-simulate :: RandomGen g => ProjectSystem -> Project -> State g (Bool, Cost)
+simulate ∷ RandomGen g ⇒ ProjectSystem → Project → State g (Bool, Cost)
 simulate sys (RefProj n) =
    case M.lookup n (bindings sys) of
      Just TaskProj { reportedTrust=t, reportedCost=c }    ->
@@ -97,7 +107,7 @@ simulate sys SumProj { subprojects=ps }        =
   if null opens then pure (True, 0) else simulate' opens
  where
    opens = NE.filter (isOpen sys) ps
-   simulate' :: RandomGen g => [Project] -> State g (Bool, Cost)
+   simulate' ∷ RandomGen g ⇒ [Project] → State g (Bool, Cost)
    simulate' [] = pure (False, 0)
    simulate' (p:rest) = do (success, c) <- simulate sys p
                            if success then
@@ -106,7 +116,7 @@ simulate sys SumProj { subprojects=ps }        =
                              do (success', c') <- simulate' rest
                                 pure (success', c + c')
 
-simulateConjunction :: RandomGen g => ProjectSystem -> [Project] -> State g (Bool, Cost)
+simulateConjunction ∷ RandomGen g ⇒ ProjectSystem → [Project] → State g (Bool, Cost)
 simulateConjunction _ []       = pure (True, 0)
 simulateConjunction sys (p:rest) = do (success, c) <- simulate sys p
                                       if success then do
@@ -115,27 +125,27 @@ simulateConjunction sys (p:rest) = do (success, c) <- simulate sys p
                                       else
                                         pure (False, c)
 
-monteCarloTrusteAndCost :: RandomGen g => Int -> ProjectSystem -> Project -> State g (Trust, Cost)
+monteCarloTrusteAndCost ∷ RandomGen g ⇒ Int → ProjectSystem → Project → State g (Trust, Cost)
 monteCarloTrusteAndCost n sys p = do results <- replicateM n $ simulate sys p
                                      let trusts = map (bool 0 1 . fst) results
                                      let costs = map snd results
                                      pure (sum trusts / fromIntegral n,
                                            sum costs / fromIntegral n)
 
-aproximatelyEqual :: Float -> Float -> Property
+aproximatelyEqual ∷ Float → Float → Property
 aproximatelyEqual x y =
    counterexample (show x ++ " /= " ++ show y) (abs (x - y) <= epislon)
   where
     epislon = 0.05
 
-spec :: Spec
+spec ∷ Spec
 spec = do
   describe "estimations" $ do
 
     let g = mkStdGen 837183
 
     it "monte-carlo and analytical implementations should agree on cost" $ do
-      let propertyMCAndAnalyticalEq :: ProjectSystem -> Property
+      let propertyMCAndAnalyticalEq ∷ ProjectSystem → Property
           propertyMCAndAnalyticalEq sys =
             cost' `aproximatelyEqual` cost sys p
            where
@@ -145,7 +155,7 @@ spec = do
       property propertyMCAndAnalyticalEq
 
     it "monte-carlo and analytical implementations should agree on trust" $ do
-        let propertyMCAndAnalyticalEq :: ProjectSystem -> Property
+        let propertyMCAndAnalyticalEq ∷ ProjectSystem → Property
             propertyMCAndAnalyticalEq sys =
               trust' `aproximatelyEqual` trust sys p
              where
