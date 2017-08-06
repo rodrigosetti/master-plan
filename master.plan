@@ -1,0 +1,10 @@
+
+owner(root) = "rsetti";
+
+root = a + b;
+
+name(a) = "howdy";
+
+description(a) = "hello world!";
+
+status(b) = done;

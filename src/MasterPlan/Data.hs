@@ -15,10 +15,10 @@ data Status = Ready | Blocked | InProgress | Done | Cancelled
           deriving (Eq, Show)
 
 -- |Structure of a project expression
-data Project = SumProj { subprojects :: NE.NonEmpty Project } |
-               ProductProj { subprojects :: NE.NonEmpty Project } |
-               SequenceProj { subprojects :: NE.NonEmpty Project } |
-               RefProj { name :: String }
+data Project = SumProj (NE.NonEmpty Project) |
+               ProductProj (NE.NonEmpty Project) |
+               SequenceProj (NE.NonEmpty Project) |
+               RefProj String
                 deriving (Eq, Show)
 
 -- |A binding of a name can refer to an expression. If there are no
@@ -32,14 +32,15 @@ data ProjectBinding = TaskProj { props            :: ProjectProperties
                                } |
                       ExpressionProj { props      :: ProjectProperties
                                      , expression :: Project
-                                     }
+                                     } |
+                      UnconsolidatedProj { props :: ProjectProperties }
                          deriving (Eq, Show)
 
 -- |Any binding (with a name) may have associated properties
 data ProjectProperties = ProjectProperties { title       :: String
-                                           , description :: Maybe[String]
-                                           , url         :: Maybe[String]
-                                           , owner       :: Maybe[String]
+                                           , description :: Maybe String
+                                           , url         :: Maybe String
+                                           , owner       :: Maybe String
                                            } deriving (Eq, Show)
 
 -- |A project system defines the bindins (mapping from names to expressions or tasks)
@@ -53,8 +54,18 @@ defaultProjectProps = ProjectProperties { title = "root"
                                         , url = Nothing
                                         , owner = Nothing }
 
+defaultTaskProj ∷ ProjectBinding
+defaultTaskProj = TaskProj { props = defaultProjectProps
+                           , reportedCost = 0
+                           , reportedTrust = 1
+                           , reportedProgress = 0
+                           , reportedStatus = Ready }
+
 isOpen ∷ ProjectSystem → Project → Bool
-isOpen sys p = status sys p `elem` [InProgress, Ready, Blocked]
+isOpen sys p =
+   status sys p `elem` openStatus
+  where
+   openStatus = [InProgress, Ready, Blocked] :: [Status]
 
 isClosed ∷ ProjectSystem → Project → Bool
 isClosed sys p = not $ isOpen sys p
@@ -65,6 +76,7 @@ cost sys (RefProj n) =
   case M.lookup n (bindings sys) of
     Just TaskProj { reportedCost=c }    -> c
     Just ExpressionProj { expression=p} -> cost sys p -- TODO: avoid cyclic
+    Just (UnconsolidatedProj _)         → 0 -- default
     Nothing                             -> 0 -- should not happen
 cost sys (SequenceProj ps) = costConjunction sys $ NE.dropWhile (isClosed sys) ps
 cost sys (ProductProj ps) = costConjunction sys $ NE.filter (isOpen sys) ps
@@ -88,6 +100,7 @@ trust sys (RefProj n) =
   case M.lookup n (bindings sys) of
     Just TaskProj { reportedTrust=t }   -> t
     Just ExpressionProj { expression=p} -> trust sys p -- TODO: avoid cyclic
+    Just (UnconsolidatedProj _)         → 1 -- default
     Nothing                             -> 0 -- should not happen
 trust sys (SequenceProj ps) = trustConjunction sys $ NE.dropWhile (isClosed sys) ps
 trust sys (ProductProj ps) = trustConjunction sys $ NE.filter (isOpen sys) ps
@@ -106,6 +119,7 @@ progress sys (RefProj n) =
     Just TaskProj { reportedStatus=Done } -> 1
     Just TaskProj { reportedProgress=p }  -> p
     Just ExpressionProj { expression=p}   -> progress sys p -- TODO: avoid cyclic
+    Just (UnconsolidatedProj _)           → 0 -- default
     Nothing                               -> 0 -- should not happen
 progress sys (SequenceProj ps)   = progressConjunction sys ps
 progress sys (ProductProj ps)    = progressConjunction sys ps
@@ -123,6 +137,7 @@ status sys (RefProj n) =
   case M.lookup n (bindings sys) of
     Just TaskProj { reportedProgress=p, reportedStatus=s }  -> if p>=1 then Done else s
     Just ExpressionProj { expression=p}  -> status sys p -- TODO: avoid cyclic
+    Just (UnconsolidatedProj _)         → Ready -- default
     Nothing                                        -> Cancelled -- should not happen
 status sys (SequenceProj ps) =
   let rest = NE.dropWhile (isClosed sys) ps

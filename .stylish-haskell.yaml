@@ -201,4 +201,3 @@ newline: lf
 
 language_extensions:
    - UnicodeSyntax
-   - OverloadedStrings

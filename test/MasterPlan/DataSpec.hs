@@ -1,92 +1,16 @@
 {-# LANGUAGE UnicodeSyntax #-}
 module MasterPlan.DataSpec where
 
-import           Data.Bool           (bool)
-import qualified Data.Map            as M
+import           Data.Bool            (bool)
+import qualified Data.Map             as M
 import           MasterPlan.Data
 import           Test.Hspec
-import           Test.QuickCheck     hiding (sample)
+import           Test.QuickCheck      hiding (sample)
 
-import           Control.Applicative ((<$>), (<*>))
 import           Control.Monad.State
-import           Data.List           (nub)
-import qualified Data.List.NonEmpty  as NE
+import qualified Data.List.NonEmpty   as NE
+import           MasterPlan.Arbitrary
 import           System.Random
-
-instance Arbitrary ProjectProperties where
-
-  arbitrary = pure defaultProjectProps
-{-
-  arbitrary = ProjectProperties <$> arbitrary
-                                <*> arbitrary
-                                <*> arbitrary
-                                <*> arbitrary
-
-  shrink p = [ p { name = t } | t <- shrink $ name p ] ++
-             [ p { description = t } | t <- shrink $ description p ] ++
-             [ p { url = t } | t <- shrink $ url p ] ++
-             [ p { owner = t } | t <- shrink $ owner p ]
--}
-
-instance Arbitrary Status where
-
-  arbitrary = elements [ Ready, Blocked, InProgress, Done, Cancelled ]
-
-  shrink Done = []
-  shrink _    = [Done]
-
-testingKeys ∷ [String]
-testingKeys = ["a","b","c","d"]
-
-rootKey ∷ String
-rootKey = "root"
-
-instance Arbitrary ProjectSystem where
-
-  arbitrary = do bs <- replicateM (length testingKeys) arbitrary
-                 let arbitraryExpr = ExpressionProj <$> arbitrary <*> arbitrary
-                 rootB <- frequency [ (1, arbitrary), (10, arbitraryExpr) ]
-                 pure $ ProjectSystem $ M.insert rootKey rootB $ M.fromList $ zip testingKeys bs
-
-  shrink (ProjectSystem bs) =
-      map ProjectSystem $ concatMap shrinkOne testingKeys
-    where
-      shrinkOne ∷ String → [M.Map String ProjectBinding]
-      shrinkOne k = case M.lookup k bs of
-        Nothing -> []
-        Just b  -> map (\s -> M.adjust (const s) k bs) $ shrink b
-
-instance Arbitrary ProjectBinding where
-
-  -- NOTE: ProjectBinding arbitrary are always tasks (no expression)
-  --       to avoid generating cycles
-  arbitrary =
-    let unitGen = choose (0.0, 1.0)
-     in TaskProj <$> arbitrary
-                 <*> unitGen
-                 <*> unitGen
-                 <*> arbitrary
-                 <*> unitGen
-
-  shrink b = nub [ b { reportedCost=0 }
-                 , b { reportedCost=1 }
-                 , b { reportedTrust=0 }
-                 , b { reportedTrust=1 }
-                 , b { reportedStatus=Done } ]
-
-instance Arbitrary Project where
-
-  arbitrary =
-    let shrinkFactor n = 2 * n `quot` 5
-    in  oneof [ SumProj <$> scale shrinkFactor arbitrary
-              , ProductProj <$> scale shrinkFactor arbitrary
-              , SequenceProj <$> scale shrinkFactor arbitrary
-              , RefProj <$> elements testingKeys ]
-
-  shrink (SumProj ps)      = map SumProj (shrink ps) ++ NE.toList ps
-  shrink (ProductProj ps)  = map ProductProj (shrink ps) ++ NE.toList ps
-  shrink (SequenceProj ps) = map SequenceProj (shrink ps) ++ NE.toList ps
-  shrink (RefProj _)       = []
 
 average ∷ RandomGen g ⇒ State g Float → Int → State g Float
 average sample n = do total <- replicateM n sample
@@ -99,11 +23,12 @@ simulate sys (RefProj n) =
        do r <- state $ randomR (0, 1)
           pure (t > r, c)
      Just ExpressionProj { expression=p} -> simulate sys p -- TODO: avoid cyclic
+     Just (UnconsolidatedProj _)         -> pure (True, 0)
      Nothing                             -> pure (False, 0) -- should not happen
 
-simulate sys SequenceProj { subprojects=ps }   = simulateConjunction sys $ NE.dropWhile (isClosed sys) ps
-simulate sys ProductProj { subprojects=ps }    = simulateConjunction sys $ NE.filter (isOpen sys) ps
-simulate sys SumProj { subprojects=ps }        =
+simulate sys (SequenceProj ps)   = simulateConjunction sys $ NE.dropWhile (isClosed sys) ps
+simulate sys (ProductProj ps)    = simulateConjunction sys $ NE.filter (isOpen sys) ps
+simulate sys (SumProj ps)        =
   if null opens then pure (True, 0) else simulate' opens
  where
    opens = NE.filter (isOpen sys) ps
