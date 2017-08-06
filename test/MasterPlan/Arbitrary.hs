@@ -1,37 +1,38 @@
 {-# LANGUAGE UnicodeSyntax #-}
 module MasterPlan.Arbitrary where
 
-import           Control.Monad      (replicateM)
-import           Data.List          (nub)
-import qualified Data.List.NonEmpty as NE
-import qualified Data.Map           as M
+import           Control.Monad             (replicateM)
+import qualified Data.List.NonEmpty        as NE
+import qualified Data.Map                  as M
 import           MasterPlan.Data
 import           Test.QuickCheck
+import           Test.QuickCheck.Instances ()
 
 instance Arbitrary ProjectProperties where
 
-  arbitrary = pure defaultProjectProps
-  {-
-  arbitrary = ProjectProperties <$> arbitrary
-                                <*> arbitrary
-                                <*> arbitrary
-                                <*> arbitrary
-
+  --arbitrary = pure defaultProjectProps
+  --{-
+  arbitrary =
+      let s = getPrintableString <$> arbitrary
+          os = oneof [pure Nothing, Just <$> s]
+      in ProjectProperties <$> s <*> os <*> os <*> os
+{-
   shrink p = [ p { title = t } | t <- shrink $ title p ] ++
              [ p { description = t } | t <- shrink $ description p ] ++
              [ p { url = t } | t <- shrink $ url p ] ++
              [ p { owner = t } | t <- shrink $ owner p ]
-             -}
+  --}
 
 instance Arbitrary Status where
 
-  arbitrary = elements [ Ready, Blocked, InProgress, Done, Cancelled ]
+  arbitrary = elements [ Ready, Blocked, Progress, Done, Cancelled ]
 
   shrink Done = []
   shrink _    = [Done]
 
 testingKeys ∷ [String]
-testingKeys = ["a","b","c","d"]
+--testingKeys = ["a","b","c","d"]
+testingKeys = ["a"]
 
 rootKey ∷ String
 rootKey = "root"
@@ -56,30 +57,31 @@ instance Arbitrary ProjectBinding where
   -- NOTE: ProjectBinding arbitrary are always tasks (no expression)
   --       to avoid generating cycles
   arbitrary =
-    let unitGen = choose (0.0, 1.0)
+    let unitGen = elements [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
      in frequency [ (50, TaskProj <$> arbitrary
-                                  <*> unitGen
+                                  <*> elements [0, 1 .. 100]
                                   <*> unitGen
                                   <*> arbitrary
                                   <*> unitGen)
                   , (1, pure $ UnconsolidatedProj defaultProjectProps) ]
 
-  shrink b = nub [ b { reportedCost=0 }
-                 , b { reportedCost=1 }
-                 , b { reportedTrust=0 }
-                 , b { reportedTrust=1 }
-                 , b { reportedStatus=Done } ]
+  shrink (ExpressionProj pr e) = map (ExpressionProj pr) $ shrink e
+  shrink _                     = []
 
 instance Arbitrary Project where
 
   arbitrary =
-    let shrinkFactor n = 2 * n `quot` 5
-    in  oneof [ SumProj <$> scale shrinkFactor arbitrary
-              , ProductProj <$> scale shrinkFactor arbitrary
-              , SequenceProj <$> scale shrinkFactor arbitrary
-              , RefProj <$> elements testingKeys ]
+    let shrinkFactor n = 3 * n `quot` 5
+    in  frequency [ (1, SumProj <$> scale shrinkFactor arbitrary)
+                  , (1, ProductProj <$> scale shrinkFactor arbitrary)
+                  , (1, SequenceProj <$> scale shrinkFactor arbitrary)
+                  , (2, RefProj <$> elements testingKeys) ]
 
-  shrink (SumProj ps)      = map SumProj (shrink ps) ++ NE.toList ps
-  shrink (ProductProj ps)  = map ProductProj (shrink ps) ++ NE.toList ps
-  shrink (SequenceProj ps) = map SequenceProj (shrink ps) ++ NE.toList ps
-  shrink (RefProj _)       = []
+  shrink p = let p' = simplifyProj p in if p == p' then [] else [p]
+  -- shrink (SumProj (p NE.:| []))      = [p]
+  -- shrink (ProductProj (p NE.:| []))  = [p]
+  -- shrink (SequenceProj (p NE.:| [])) = [p]
+  -- shrink (SumProj ps)      = map SumProj (shrink ps) ++ NE.toList ps
+  -- shrink (ProductProj ps)  = map ProductProj (shrink ps) ++ NE.toList ps
+  -- shrink (SequenceProj ps) = map SequenceProj (shrink ps) ++ NE.toList ps
+  -- shrink (RefProj _)       = []

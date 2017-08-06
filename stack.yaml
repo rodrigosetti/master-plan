@@ -41,6 +41,8 @@ packages:
 # (e.g., acme-missiles-0.3)
 extra-deps:
   - megaparsec-6.0.2
+  - QuickCheck-2.10.0.1
+  - quickcheck-instances-0.3.16
 
 # Override default flag values for local packages and extra-deps
 flags: {}

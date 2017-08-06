@@ -13,25 +13,25 @@ import           MasterPlan.Arbitrary
 import           System.Random
 
 average ∷ RandomGen g ⇒ State g Float → Int → State g Float
-average sample n = do total <- replicateM n sample
-                      pure $ sum total / fromIntegral n
+average sample n = do tot <- replicateM n sample
+                      pure $ sum tot / fromIntegral n
 
 simulate ∷ RandomGen g ⇒ ProjectSystem → Project → State g (Bool, Cost)
+simulate sys p | isClosed sys p  = pure (True, 0)
 simulate sys (RefProj n) =
    case M.lookup n (bindings sys) of
-     Just TaskProj { reportedTrust=t, reportedCost=c }    ->
+     Just TaskProj { reportedTrust=t, reportedCost=c }      ->
        do r <- state $ randomR (0, 1)
           pure (t > r, c)
      Just ExpressionProj { expression=p} -> simulate sys p -- TODO: avoid cyclic
      Just (UnconsolidatedProj _)         -> pure (True, 0)
      Nothing                             -> pure (False, 0) -- should not happen
 
-simulate sys (SequenceProj ps)   = simulateConjunction sys $ NE.dropWhile (isClosed sys) ps
-simulate sys (ProductProj ps)    = simulateConjunction sys $ NE.filter (isOpen sys) ps
+simulate sys (SequenceProj ps)   = simulateConjunction sys $ NE.toList ps
+simulate sys (ProductProj ps)    = simulateConjunction sys $ NE.toList ps
 simulate sys (SumProj ps)        =
-  if null opens then pure (True, 0) else simulate' opens
+  simulate' $ NE.toList ps
  where
-   opens = NE.filter (isOpen sys) ps
    simulate' ∷ RandomGen g ⇒ [Project] → State g (Bool, Cost)
    simulate' [] = pure (False, 0)
    simulate' (p:rest) = do (success, c) <- simulate sys p
@@ -50,18 +50,19 @@ simulateConjunction sys (p:rest) = do (success, c) <- simulate sys p
                                       else
                                         pure (False, c)
 
-monteCarloTrusteAndCost ∷ RandomGen g ⇒ Int → ProjectSystem → Project → State g (Trust, Cost)
-monteCarloTrusteAndCost n sys p = do results <- replicateM n $ simulate sys p
-                                     let trusts = map (bool 0 1 . fst) results
-                                     let costs = map snd results
-                                     pure (sum trusts / fromIntegral n,
-                                           sum costs / fromIntegral n)
+monteCarloTrustAndCost ∷ RandomGen g ⇒ Int → ProjectSystem → Project → State g (Trust, Cost)
+monteCarloTrustAndCost n sys p = do results <- replicateM n $ simulate sys p
+                                    let trusts = map (bool 0 1 . fst) results
+                                    let costs = map snd results
+                                    pure (sum trusts / fromIntegral n,
+                                         sum costs / fromIntegral n)
 
-aproximatelyEqual ∷ Float → Float → Property
-aproximatelyEqual x y =
-   counterexample (show x ++ " /= " ++ show y) (abs (x - y) <= epislon)
+aproximatelyEqual ∷ Float -> Float -> Float → Float -> Property
+aproximatelyEqual alpha beta x y =
+   counterexample (show x ++ " /= " ++ show y) $ diff <= max relError beta
   where
-    epislon = 0.05
+    relError = alpha * max (abs x) (abs y)
+    diff = abs $ x - y
 
 spec ∷ Spec
 spec = do
@@ -69,25 +70,40 @@ spec = do
 
     let g = mkStdGen 837183
 
-    it "monte-carlo and analytical implementations should agree on cost" $ do
-      let propertyMCAndAnalyticalEq ∷ ProjectSystem → Property
-          propertyMCAndAnalyticalEq sys =
-            cost' `aproximatelyEqual` cost sys p
-           where
-             p = RefProj rootKey
-             (_, cost') = evalState (monteCarloTrusteAndCost 10000 sys p) g
+    let eq = aproximatelyEqual 0.05 0.05
 
-      property propertyMCAndAnalyticalEq
+    it "monte-carlo and analytical implementations should agree on cost" $ do
+        let propertyMCAndAnalyticalEq ∷ ProjectSystem → Property
+            propertyMCAndAnalyticalEq sys =
+              cost' `eq` cost sys p
+             where
+               p = RefProj rootKey
+               (_, cost') = evalState (monteCarloTrustAndCost 10000 sys p) g
+
+        property propertyMCAndAnalyticalEq
 
     it "monte-carlo and analytical implementations should agree on trust" $ do
         let propertyMCAndAnalyticalEq ∷ ProjectSystem → Property
             propertyMCAndAnalyticalEq sys =
-              trust' `aproximatelyEqual` trust sys p
+              trust' `eq` trust sys p
              where
                p = RefProj rootKey
-               (trust', _) = evalState (monteCarloTrusteAndCost 10000 sys p) g
+               (trust', _) = evalState (monteCarloTrustAndCost 10000 sys p) g
 
         property propertyMCAndAnalyticalEq
+
+  describe "simplify" $ do
+
+    let eq = aproximatelyEqual 0.005 0.005
+
+    it "should not change the estimations" $ do
+      let propSimplifyIsStable :: ProjectSystem -> Property
+          propSimplifyIsStable sys =
+            let sys' = sys { bindings = M.map simplify $ bindings sys }
+                p    = RefProj rootKey
+             in cost sys p `eq` cost sys' p .&&. trust sys p `eq` trust sys' p
+
+      property propSimplifyIsStable
 
   describe "cost" $ do
     let p1 = TaskProj { props=defaultProjectProps
@@ -99,7 +115,7 @@ spec = do
                      , reportedCost = 5
                      , reportedTrust = 1
                      , reportedProgress = 0.2
-                     , reportedStatus = InProgress }
+                     , reportedStatus = Progress }
     let p3 = TaskProj { props=defaultProjectProps
                       , reportedCost = 7
                       , reportedTrust = 1

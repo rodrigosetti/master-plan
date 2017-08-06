@@ -50,7 +50,8 @@ test-suite spec
                   , mtl
                   , containers
                   , hspec
-                  , QuickCheck
+                  , QuickCheck == 2.10.*
+                  , quickcheck-instances
   other-modules:    MasterPlan.DataSpec
                   , MasterPlan.Arbitrary
                   , MasterPlan.ParserSpec

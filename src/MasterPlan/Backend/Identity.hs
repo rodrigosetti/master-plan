@@ -1,3 +1,12 @@
+{-|
+Module      : MasterPlan.Backend.Identity
+Description : a backend that renders to a text that can be parsed
+Copyright   : (c) Rodrigo Setti, 2017
+License     : MIT
+Maintainer  : rodrigosetti@email.com
+Stability   : experimental
+Portability : POSIX
+-}
 {-# LANGUAGE UnicodeSyntax #-}
 module MasterPlan.Backend.Identity (render) where
 
@@ -11,14 +20,17 @@ import           MasterPlan.Data
 
 -- |Plain text renderer
 render ∷ ProjectSystem → String
-render (ProjectSystem bs) = snd $ evalRWS (renderName "root") () bs
+render (ProjectSystem bs) =
+   snd $ evalRWS (renderName "root" >> renderRest) () bs
+ where
+   renderRest = gets M.keys >>= mapM_ renderName
 
 type RenderMonad = RWS () String (M.Map String ProjectBinding)
 
 renderLine ∷ String → RenderMonad ()
 renderLine s = tell s >> tell ";\n"
 
-renderName ∷ String → RenderMonad ()
+renderName ∷ ProjectKey → RenderMonad ()
 renderName projName =
   do mb <- gets $ M.lookup projName
      case mb of
@@ -31,24 +43,24 @@ renderName projName =
                                   _                  -> []
                      mapM_ renderName names
 
-dependencies ∷ Project → [String]
+dependencies ∷ Project → [ProjectKey]
 dependencies (RefProj n)       = [n]
 dependencies (SumProj ps)      = concatMap dependencies ps
 dependencies (SequenceProj ps) = concatMap dependencies ps
 dependencies (ProductProj ps)  = concatMap dependencies ps
 
 renderProps ∷ String → ProjectProperties → RenderMonad ()
-renderProps projName p = do renderProperty projName "name" (title p) "root" id
-                            renderProperty projName "description" (description p) Nothing $ fromMaybe ""
-                            renderProperty projName "url" (url p) Nothing $ fromMaybe ""
-                            renderProperty projName "owner" (owner p) Nothing $ fromMaybe ""
+renderProps projName p = do renderProperty projName "name" (title p) projName show
+                            renderProperty projName "description" (description p) Nothing (show . fromMaybe "")
+                            renderProperty projName "url" (url p) Nothing (show . fromMaybe "")
+                            renderProperty projName "owner" (owner p) Nothing (show . fromMaybe "")
 
-renderProperty ∷ Eq a ⇒ String → String → a → a → (a → String) → RenderMonad ()
+renderProperty ∷ Eq a ⇒ ProjectKey → String → a → a → (a → String) → RenderMonad ()
 renderProperty projName propName val def toStr
   | val == def = pure ()
   | otherwise = renderLine $ propName ++ "(" ++ projName ++ ") = " ++ toStr val
 
-renderBinding ∷ String → ProjectBinding → RenderMonad ()
+renderBinding ∷ ProjectKey → ProjectBinding → RenderMonad ()
 renderBinding projName (UnconsolidatedProj p) = renderProps projName p
 renderBinding projName (p@TaskProj {}) =
     do renderProps projName $ props p
@@ -70,4 +82,4 @@ renderBinding projName (ExpressionProj pr e) =
     expressionToStr (RefProj n)       = n
     expressionToStr (ProductProj ps)  = combinedEToStr "*" ps
     expressionToStr (SequenceProj ps) = combinedEToStr "->" ps
-    expressionToStr (SumProj ps)      = combinedEToStr "*" ps
+    expressionToStr (SumProj ps)      = combinedEToStr "+" ps

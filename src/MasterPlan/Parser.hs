@@ -1,3 +1,12 @@
+{-|
+Module      : MasterPlan.Parser
+Description : export parser for project systems
+Copyright   : (c) Rodrigo Setti, 2017
+License     : MIT
+Maintainer  : rodrigosetti@email.com
+Stability   : experimental
+Portability : POSIX
+-}
 {-# LANGUAGE UnicodeSyntax #-}
 {-# LANGUAGE OverloadedLists #-}
 module MasterPlan.Parser (runParser) where
@@ -64,7 +73,7 @@ stringLiteral = char '"' >> manyTill L.charLiteral (char '"')
 statusParser :: Parser Status
 statusParser = choice ([ symbol "ready" *> pure Ready
                        , symbol "blocked" *> pure Blocked
-                       , symbol "progress" *> pure InProgress
+                       , symbol "progress" *> pure Progress
                        , symbol "done" *> pure Done
                        , symbol "cancelled" *> pure Cancelled ] :: [Parser Status])
 
@@ -127,7 +136,7 @@ definition =
 
 expressionParser ∷ Parser Project
 expressionParser =
-    makeExprParser term table <?> "expression"
+    simplifyProj <$> makeExprParser term table <?> "expression"
   where
     term = parens expressionParser <|> (RefProj <$> identifier)
     table = [[binary "*" combineProduct]
@@ -136,22 +145,25 @@ expressionParser =
     binary  op f = InfixL  (f <$ symbol op)
 
     combineProduct ∷ Project → Project → Project
-    combineProduct (ProductProj ps1) (ProductProj ps2) = ProductProj $ ps1 <> ps2
-    combineProduct (ProductProj ps) p = ProductProj $ ps <> [p]
-    combineProduct p (ProductProj ps) = ProductProj $ p NE.<| ps
-    combineProduct p1 p2 = ProductProj [p1, p2]
+    combineProduct p1 p2 = ProductProj $ p1 NE.<| [p2]
+    --combineProduct (ProductProj ps1) (ProductProj ps2) = ProductProj $ ps1 <> ps2
+    --combineProduct (ProductProj ps) p = ProductProj $ ps <> [p]
+    --combineProduct p (ProductProj ps) = ProductProj $ p NE.<| ps
+    --combineProduct p1 p2 = ProductProj [p1, p2]
 
     combineSequence ∷ Project → Project → Project
-    combineSequence (SequenceProj ps1) (SequenceProj ps2) = SequenceProj $ ps1 <> ps2
-    combineSequence (SequenceProj ps) p = SequenceProj $ ps <> [p]
-    combineSequence p (SequenceProj ps) = SequenceProj $ p NE.<| ps
-    combineSequence p1 p2 = SequenceProj [p1, p2]
+    combineSequence p1 p2 = SequenceProj $ p1 NE.<| [p2]
+    --combineSequence (SequenceProj ps1) (SequenceProj ps2) = SequenceProj $ ps1 <> ps2
+    --combineSequence (SequenceProj ps) p = SequenceProj $ ps <> [p]
+    --combineSequence p (SequenceProj ps) = SequenceProj $ p NE.<| ps
+    --combineSequence p1 p2 = SequenceProj [p1, p2]
 
     combineSum ∷ Project → Project → Project
-    combineSum (SumProj ps1) (SumProj ps2) = SumProj $ ps1 <> ps2
-    combineSum (SumProj ps) p              = SumProj $ ps <> [p]
-    combineSum p (SumProj ps)              = SumProj $ p NE.<| ps
-    combineSum p1 p2                       = SumProj [p1, p2]
+    combineSum p1 p2 = SumProj $ p1 NE.<| [p2]
+    --combineSum (SumProj ps1) (SumProj ps2) = SumProj $ ps1 <> ps2
+    --combineSum (SumProj ps) p              = SumProj $ ps <> [p]
+    --combineSum p (SumProj ps)              = SumProj $ p NE.<| ps
+    --combineSum p1 p2                       = SumProj [p1, p2]
 
 
 projectSystem :: Parser ProjectSystem
