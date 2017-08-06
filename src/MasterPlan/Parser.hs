@@ -14,7 +14,6 @@ module MasterPlan.Parser (runParser) where
 import           Control.Monad.State
 import qualified Data.List.NonEmpty         as NE
 import qualified Data.Map                   as M
-import           Data.Semigroup             ((<>))
 import           Data.Void
 import           MasterPlan.Data
 import           Text.Megaparsec            hiding (State, runParser)
@@ -146,31 +145,19 @@ expressionParser =
 
     combineProduct ∷ Project → Project → Project
     combineProduct p1 p2 = ProductProj $ p1 NE.<| [p2]
-    --combineProduct (ProductProj ps1) (ProductProj ps2) = ProductProj $ ps1 <> ps2
-    --combineProduct (ProductProj ps) p = ProductProj $ ps <> [p]
-    --combineProduct p (ProductProj ps) = ProductProj $ p NE.<| ps
-    --combineProduct p1 p2 = ProductProj [p1, p2]
 
     combineSequence ∷ Project → Project → Project
     combineSequence p1 p2 = SequenceProj $ p1 NE.<| [p2]
-    --combineSequence (SequenceProj ps1) (SequenceProj ps2) = SequenceProj $ ps1 <> ps2
-    --combineSequence (SequenceProj ps) p = SequenceProj $ ps <> [p]
-    --combineSequence p (SequenceProj ps) = SequenceProj $ p NE.<| ps
-    --combineSequence p1 p2 = SequenceProj [p1, p2]
 
     combineSum ∷ Project → Project → Project
     combineSum p1 p2 = SumProj $ p1 NE.<| [p2]
-    --combineSum (SumProj ps1) (SumProj ps2) = SumProj $ ps1 <> ps2
-    --combineSum (SumProj ps) p              = SumProj $ ps <> [p]
-    --combineSum p (SumProj ps)              = SumProj $ p NE.<| ps
-    --combineSum p1 p2                       = SumProj [p1, p2]
 
 
 projectSystem :: Parser ProjectSystem
 projectSystem =
     do between sc eof definitionSeq
        ps <- lift get
-       unless (M.member "root" $ bindings ps) $ fail "expected project \"root\" to be defined."
+       unless (M.member rootKey $ bindings ps) $ fail $ "expected project \"" ++ rootKey ++ "\" to be defined."
        pure ps
  where
    definitionSeq = void $ endBy1 definition (symbol ";")

@@ -1,10 +1,15 @@
+description(root) = "JiE38";
+name(root) = "\133460\177268<(S#";
+//url(root) = "\149403\&0vD\10255";
+url(root) = "\0";
+owner(root) = "}|}\53331<:e";
+root = a -> a -> a * a * a * a * a + a + a;
 
-owner(root) = "rsetti";
-
-root = a + b;
-
-name(a) = "howdy";
-
-description(a) = "hello world!";
-
-status(b) = done;
+name(a) = "";
+description(a) = ",<#e?V6";
+url(a) = "ZA";
+owner(a) = "v;'cjfh";
+cost(a) = 4.0;
+status(a) = blocked;
+trust(a) = 40.0%;
+progress(a) = 70.0%;

@@ -4,24 +4,21 @@ module MasterPlan.Arbitrary where
 import           Control.Monad             (replicateM)
 import qualified Data.List.NonEmpty        as NE
 import qualified Data.Map                  as M
+import           Data.Maybe                (isNothing)
 import           MasterPlan.Data
 import           Test.QuickCheck
 import           Test.QuickCheck.Instances ()
 
 instance Arbitrary ProjectProperties where
 
-  --arbitrary = pure defaultProjectProps
-  --{-
   arbitrary =
-      let s = getPrintableString <$> arbitrary
+      let s = getUnicodeString <$> arbitrary
           os = oneof [pure Nothing, Just <$> s]
       in ProjectProperties <$> s <*> os <*> os <*> os
-{-
-  shrink p = [ p { title = t } | t <- shrink $ title p ] ++
-             [ p { description = t } | t <- shrink $ description p ] ++
-             [ p { url = t } | t <- shrink $ url p ] ++
-             [ p { owner = t } | t <- shrink $ owner p ]
-  --}
+
+  shrink p = (if isNothing (description p) then [] else [p { description = Nothing }]) ++
+             (if isNothing (url p) then [] else [p { url = Nothing }]) ++
+             (if isNothing (owner p) then [] else [p { owner = Nothing }])
 
 instance Arbitrary Status where
 
@@ -31,11 +28,7 @@ instance Arbitrary Status where
   shrink _    = [Done]
 
 testingKeys ∷ [String]
---testingKeys = ["a","b","c","d"]
-testingKeys = ["a"]
-
-rootKey ∷ String
-rootKey = "root"
+testingKeys = ["a", "b", "c", "d"]
 
 instance Arbitrary ProjectSystem where
 
@@ -77,11 +70,7 @@ instance Arbitrary Project where
                   , (1, SequenceProj <$> scale shrinkFactor arbitrary)
                   , (2, RefProj <$> elements testingKeys) ]
 
-  shrink p = let p' = simplifyProj p in if p == p' then [] else [p]
-  -- shrink (SumProj (p NE.:| []))      = [p]
-  -- shrink (ProductProj (p NE.:| []))  = [p]
-  -- shrink (SequenceProj (p NE.:| [])) = [p]
-  -- shrink (SumProj ps)      = map SumProj (shrink ps) ++ NE.toList ps
-  -- shrink (ProductProj ps)  = map ProductProj (shrink ps) ++ NE.toList ps
-  -- shrink (SequenceProj ps) = map SequenceProj (shrink ps) ++ NE.toList ps
-  -- shrink (RefProj _)       = []
+  shrink (SumProj ps)      = NE.toList ps
+  shrink (ProductProj ps)  = NE.toList ps
+  shrink (SequenceProj ps) = NE.toList ps
+  shrink (RefProj _)       = []

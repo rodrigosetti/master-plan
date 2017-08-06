@@ -15,6 +15,7 @@ module MasterPlan.Data ( Status(..)
                        , ProjectSystem(..)
                        , ProjectBinding(..)
                        , ProjectKey
+                       , rootKey
                        , Trust
                        , Cost
                        , Progress
@@ -27,14 +28,16 @@ module MasterPlan.Data ( Status(..)
                        , isClosed
                        , isOpen
                        , simplify
-                       , simplifyProj) where
+                       , simplifyProj
+                       , printStructure) where
 
-import           Data.Foldable      (asum)
-import           Data.List          (find)
-import qualified Data.List.NonEmpty as NE
-import qualified Data.Map           as M
-import           Data.Maybe         (fromMaybe)
-import           Data.Semigroup     (sconcat)
+import           Control.Monad.Writer
+import           Data.Foldable        (asum)
+import           Data.List            (find)
+import qualified Data.List.NonEmpty   as NE
+import qualified Data.Map             as M
+import           Data.Maybe           (fromMaybe)
+import           Data.Semigroup       (sconcat)
 
 type Trust = Float
 type Cost = Float
@@ -78,8 +81,11 @@ data ProjectProperties = ProjectProperties { title       :: String
 newtype ProjectSystem = ProjectSystem { bindings :: M.Map ProjectKey ProjectBinding }
                           deriving (Eq, Show)
 
+rootKey ∷ ProjectKey
+rootKey = "root"
+
 defaultProjectProps ∷ ProjectProperties
-defaultProjectProps = ProjectProperties { title = "root"
+defaultProjectProps = ProjectProperties { title = rootKey
                                         , description = Nothing
                                         , url = Nothing
                                         , owner = Nothing }
@@ -111,9 +117,8 @@ cost sys (ProductProj ps) = costConjunction sys ps
 cost sys (SumProj ps) =
    sum $ map (\x -> (1 - snd x) * fst x) $ zip costs accTrusts
  where
-   accTrusts = scanl (\a b -> a + b*(1-a)) 0 $ map (trust sys) opens
-   costs = map (cost sys) opens
-   opens = NE.filter (isOpen sys) ps
+   accTrusts = NE.toList $ NE.scanl (\a b -> a + b*(1-a)) 0 $ NE.map (trust sys) ps
+   costs = NE.toList $ NE.map (cost sys) ps
 
 costConjunction ∷ ProjectSystem → NE.NonEmpty Project → Cost
 costConjunction sys ps =
@@ -134,10 +139,7 @@ trust sys (RefProj n) =
 trust sys (SequenceProj ps) = trustConjunction sys ps
 trust sys (ProductProj ps) = trustConjunction sys ps
 trust sys (SumProj ps) =
-  if null opens then 1 else accTrusts
- where
-  accTrusts = foldl (\a b -> a + b*(1-a)) 0 $ map (trust sys) opens
-  opens = NE.filter (isOpen sys) ps
+  foldl (\a b -> a + b*(1-a)) 0 $ NE.map (trust sys) ps
 
 trustConjunction ∷ ProjectSystem → NE.NonEmpty Project → Trust
 trustConjunction sys ps = product $ NE.map (trust sys) ps
@@ -155,11 +157,7 @@ progress sys (ProductProj ps)    = progressConjunction sys ps
 progress sys (SumProj ps)        = maximum $ NE.map (progress sys) ps
 
 progressConjunction ∷ ProjectSystem → NE.NonEmpty Project → Progress
-progressConjunction sys ps =
-   let opens = NE.filter (isOpen sys) ps
-    in if null opens
-      then 1
-      else sum (map (progress sys) opens) / fromIntegral (length opens)
+progressConjunction sys ps = sum (NE.map (progress sys) ps) / fromIntegral (length ps)
 
 status ∷ ProjectSystem → Project → Status
 status sys (RefProj n) =
@@ -175,7 +173,7 @@ status sys (SequenceProj ps) =
 status sys (ProductProj ps) =
   statusPriority [Progress, Ready, Blocked, Cancelled, Done] sys ps
 status sys (SumProj ps) =
-  statusPriority [Done, Progress, Ready, Blocked, Cancelled] sys ps
+  statusPriority [Done, Cancelled, Progress, Ready, Blocked] sys ps
 
 statusPriority ∷ [Status] → ProjectSystem → NE.NonEmpty Project → Status
 statusPriority priority sys ps =
@@ -214,3 +212,16 @@ simplifyProj (SequenceProj ps) =
     reduce (SequenceProj ps') = neConcatMap reduce ps'
     reduce p                  = [simplifyProj p]
 simplifyProj p@RefProj {}     = p
+
+-- |Debugging
+printStructure ∷ Project → String
+printStructure = execWriter . print' 0
+   where
+     ident ∷ Int → Writer String ()
+     ident il = replicateM_ il $ tell " |"
+
+     print' ∷ Int → Project → Writer String ()
+     print' il (RefProj n)  = ident il >> tell ("-" ++ n ++ "\n")
+     print' il (SumProj ps) = ident il >> tell "-+\n" >> forM_ ps (print' $ il+1)
+     print' il (SequenceProj ps) = ident il >> tell "->\n" >> forM_ ps (print' $ il+1)
+     print' il (ProductProj ps) = ident il >> tell "-*\n" >> forM_ ps (print' $ il+1)
