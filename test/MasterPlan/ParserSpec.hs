@@ -21,4 +21,4 @@ spec =
             let sys' = sys { bindings = M.map simplify $ bindings sys}
             in runParser "test" (render sys') === Right sys'
 
-      property propertyParseAndOutputIdentity
+      property $ withMaxSuccess 50 propertyParseAndOutputIdentity
