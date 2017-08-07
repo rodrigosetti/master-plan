@@ -96,6 +96,15 @@ spec = do
 
     let eq = aproximatelyEqual 0.005 0.005
 
+    it "is irreductible" $ do
+      let simplificationIsIrreductible :: Project -> Property
+          simplificationIsIrreductible p =
+            let p' = simplifyProj p
+                p'' = simplifyProj p'
+             in p /= p' ==> p' == p''
+
+      property simplificationIsIrreductible
+
     it "should not change the estimations" $ do
       let propSimplifyIsStable :: ProjectSystem -> Property
           propSimplifyIsStable sys =

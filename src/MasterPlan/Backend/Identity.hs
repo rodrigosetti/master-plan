@@ -74,12 +74,13 @@ renderBinding projName (p@TaskProj {}) =
 
 renderBinding projName (ExpressionProj pr e) =
     do renderProps projName pr
-       renderLine $ projName ++ " = " ++ expressionToStr e
+       renderLine $ projName ++ " = " ++ expressionToStr False e
   where
-    combinedEToStr op ps = let sube = map expressionToStr $ NE.toList ps
-                            in intercalate (" " ++ op ++ " ") sube
+    combinedEToStr parens op ps = let sube = map (expressionToStr True) $ NE.toList ps
+                                      s = intercalate (" " ++ op ++ " ") sube
+                                   in if parens && length ps > 1 then "(" ++ s ++ ")" else s
 
-    expressionToStr (RefProj n)       = n
-    expressionToStr (ProductProj ps)  = combinedEToStr "*" ps
-    expressionToStr (SequenceProj ps) = combinedEToStr "->" ps
-    expressionToStr (SumProj ps)      = combinedEToStr "+" ps
+    expressionToStr _      (RefProj n)       = n
+    expressionToStr parens (ProductProj ps)  = combinedEToStr parens "*" ps
+    expressionToStr parens (SequenceProj ps) = combinedEToStr parens "->" ps
+    expressionToStr parens (SumProj ps)      = combinedEToStr parens "+" ps

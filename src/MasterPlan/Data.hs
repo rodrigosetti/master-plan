@@ -197,17 +197,17 @@ simplifyProj (SumProj (p NE.:| []))      = simplifyProj p
 simplifyProj (ProductProj (p NE.:| []))  = simplifyProj p
 simplifyProj (SequenceProj (p NE.:| [])) = simplifyProj p
 simplifyProj (SumProj ps) =
-    SumProj $ neConcatMap reduce ps
+    SumProj $ neConcatMap (reduce . simplifyProj) ps
   where
     reduce (SumProj ps') = neConcatMap reduce ps'
     reduce p             = [simplifyProj p]
 simplifyProj (ProductProj ps) =
-    ProductProj $ neConcatMap reduce ps
+    ProductProj $ neConcatMap (reduce . simplifyProj) ps
   where
     reduce (ProductProj ps') = neConcatMap reduce ps'
     reduce p                 = [simplifyProj p]
 simplifyProj (SequenceProj ps) =
-    SequenceProj $ neConcatMap reduce ps
+    SequenceProj $ neConcatMap (reduce . simplifyProj) ps
   where
     reduce (SequenceProj ps') = neConcatMap reduce ps'
     reduce p                  = [simplifyProj p]

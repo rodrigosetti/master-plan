@@ -33,8 +33,7 @@ testingKeys = ["a", "b", "c", "d"]
 instance Arbitrary ProjectSystem where
 
   arbitrary = do bs <- replicateM (length testingKeys) arbitrary
-                 let arbitraryExpr = ExpressionProj <$> arbitrary <*> arbitrary
-                 rootB <- frequency [ (1, arbitrary), (10, arbitraryExpr) ]
+                 rootB <- ExpressionProj <$> arbitrary <*> arbitrary
                  pure $ ProjectSystem $ M.insert rootKey rootB $ M.fromList $ zip testingKeys bs
 
   shrink (ProjectSystem bs) =
