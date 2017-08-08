@@ -186,14 +186,10 @@ optimizeProj ∷ ProjectSystem → Project → Project
 optimizeProj sys (SumProj ps)      =
   let f p = cost sys p / trust sys p
   in SumProj $ NE.sortWith f $ NE.map (optimizeProj sys) ps
-optimizeProj sys (ProductProj ps)  = ProductProj $ optimizeConjunction sys ps
-optimizeProj sys (SequenceProj ps) = SequenceProj $ optimizeConjunction sys ps
-optimizeProj _   p@RefProj {}      = p
-
-optimizeConjunction ∷ ProjectSystem → NE.NonEmpty Project → NE.NonEmpty Project
-optimizeConjunction sys ps =
+optimizeProj sys (ProductProj ps)  =
   let f p = cost sys p / (1 - trust sys p)
-  in NE.sortWith f $ NE.map (optimizeProj sys) ps
+  in ProductProj $ NE.sortWith f $ NE.map (optimizeProj sys) ps
+optimizeProj _   p                 = p
 
 -- |Debugging
 printStructure ∷ Project → String

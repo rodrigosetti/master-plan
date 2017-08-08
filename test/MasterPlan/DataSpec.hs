@@ -118,8 +118,7 @@ spec = do
         shuffleProj :: Project -> IO Project
         shuffleProj (SumProj ps)      = SumProj <$> shuffleProjs ps
         shuffleProj (ProductProj ps)  = ProductProj <$> shuffleProjs ps
-        shuffleProj (SequenceProj ps) = SequenceProj <$> shuffleProjs ps
-        shuffleProj p@RefProj {}      = pure p
+        shuffleProj p                 = pure p
 
     it "minimize cost and keep trust stable" $ do
       -- This test verifies that for any arbitrary project tree, the
