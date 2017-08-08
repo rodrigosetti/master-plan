@@ -20,13 +20,13 @@ average sample n = do tot <- replicateM n sample
 simulate ∷ RandomGen g ⇒ ProjectSystem → Project → State g (Bool, Cost)
 simulate sys (RefProj n) =
    case M.lookup n (bindings sys) of
-     Just TaskProj { reportedTrust=t, reportedCost=c, reportedProgress=p } ->
+     Just (TaskProj _ c t p) ->
        do r <- state $ randomR (0, 1)
           let remainingProgress =  1 - p
               effectiveTrust = p + t * remainingProgress
               effectiveCost = c * remainingProgress
           pure (effectiveTrust > r, effectiveCost)
-     Just ExpressionProj { expression=p} -> simulate sys p -- TODO: avoid cyclic
+     Just (ExpressionProj _ p)           -> simulate sys p -- TODO: avoid cyclic
      Just (UnconsolidatedProj _)         -> pure (True, 0)
      Nothing                             -> pure (False, 0) -- should not happen
 
@@ -128,7 +128,7 @@ spec = do
 
       let optimizeMinimizesCost :: ProjectSystem -> Property
           optimizeMinimizesCost sys =
-            let p = expression $ fromJust $ M.lookup "root" $ bindings sys
+            let (ExpressionProj _ p) = fromJust $ M.lookup "root" $ bindings sys
                 op = optimizeProj sys p
                 ocost = cost sys op
                 otrust = trust sys op

@@ -61,11 +61,11 @@ renderProperty projName propName val def toStr
 
 renderBinding ∷ ProjectKey → ProjectBinding → RenderMonad ()
 renderBinding projName (UnconsolidatedProj p) = renderProps projName p
-renderBinding projName (p@TaskProj {}) =
-    do renderProps projName $ props p
-       renderProperty projName "cost" (reportedCost p) 0 show
-       renderProperty projName "trust" (reportedTrust p) 1 percentage
-       renderProperty projName "progress" (reportedProgress p) 0 percentage
+renderBinding projName (TaskProj props c t p) =
+    do renderProps projName props
+       renderProperty projName "cost" c 0 show
+       renderProperty projName "trust" t 1 percentage
+       renderProperty projName "progress" p 0 percentage
   where
     percentage n = show (n * 100) ++ "%"
 
