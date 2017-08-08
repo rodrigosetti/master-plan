@@ -1,5 +1,5 @@
 {-# LANGUAGE UnicodeSyntax #-}
-module MasterPlan.Arbitrary where
+module MasterPlan.Arbitrary () where
 
 import           Control.Monad             (replicateM)
 import qualified Data.List.NonEmpty        as NE

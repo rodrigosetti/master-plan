@@ -1,18 +1,17 @@
 {-# LANGUAGE UnicodeSyntax #-}
-module MasterPlan.DataSpec where
-
-import           Data.Bool            (bool)
-import qualified Data.Map             as M
-import           MasterPlan.Data
-import           Test.Hspec
-import           Test.QuickCheck      hiding (sample)
-import Data.Maybe (fromJust)
+module MasterPlan.DataSpec (spec) where
 
 import           Control.Monad.State
-import qualified Data.List.NonEmpty   as NE
-import           MasterPlan.Arbitrary ()
+import           Data.Bool             (bool)
+import qualified Data.List.NonEmpty    as NE
+import qualified Data.Map              as M
+import           Data.Maybe            (fromJust)
+import           MasterPlan.Arbitrary  ()
+import           MasterPlan.Data
 import           System.Random
-import System.Random.Shuffle (shuffle')
+import           System.Random.Shuffle (shuffle')
+import           Test.Hspec
+import           Test.QuickCheck       hiding (sample)
 
 average ∷ RandomGen g ⇒ State g Float → Int → State g Float
 average sample n = do tot <- replicateM n sample
@@ -70,33 +69,24 @@ aproximatelyEqual alpha beta x y =
 
 spec ∷ Spec
 spec = do
-  describe "estimations" $ do
+  describe "trust and cost" $ do
 
     let g = mkStdGen 837183
 
     let eq = aproximatelyEqual 0.05 0.05
 
-    it "monte-carlo and analytical implementations should agree on cost" $ do
-        let propertyMCAndAnalyticalEq ∷ ProjectSystem → Property
-            propertyMCAndAnalyticalEq sys =
-              cost' `eq` cost sys p
+    it "monte-carlo and analytical implementations should agree" $ do
+        let monteCarloAndAnalyticalAgree ∷ ProjectSystem → Property
+            monteCarloAndAnalyticalAgree sys =
+              (counterexample "disagree on cost"  $ cost'  `eq` cost  sys p) .&&.
+              (counterexample "disagree on trust" $ trust' `eq` trust sys p)
              where
                p = RefProj rootKey
-               (_, cost') = evalState (monteCarloTrustAndCost 10000 sys p) g
+               (trust', cost') = evalState (monteCarloTrustAndCost 50000 sys p) g
 
-        property propertyMCAndAnalyticalEq
+        property monteCarloAndAnalyticalAgree
 
-    it "monte-carlo and analytical implementations should agree on trust" $ do
-        let propertyMCAndAnalyticalEq ∷ ProjectSystem → Property
-            propertyMCAndAnalyticalEq sys =
-              trust' `eq` trust sys p
-             where
-               p = RefProj rootKey
-               (trust', _) = evalState (monteCarloTrustAndCost 10000 sys p) g
-
-        property propertyMCAndAnalyticalEq
-
-  describe "simplify" $ do
+  describe "simplification" $ do
 
     let eq = aproximatelyEqual 0.005 0.005
 
@@ -109,7 +99,7 @@ spec = do
 
       property simplificationIsIrreductible
 
-    it "should not change the estimations" $ do
+    it "is stable" $ do
       let propSimplifyIsStable :: ProjectSystem -> Property
           propSimplifyIsStable sys =
             let sys' = sys { bindings = M.map simplify $ bindings sys }
@@ -118,7 +108,7 @@ spec = do
 
       property propSimplifyIsStable
 
-  describe "optimize" $ do
+  describe "optimization" $ do
 
     let shuffleProjs :: NE.NonEmpty Project -> IO (NE.NonEmpty Project)
         shuffleProjs ps = do ps' <- NE.toList <$> mapM shuffleProj ps
@@ -131,7 +121,7 @@ spec = do
         shuffleProj (SequenceProj ps) = SequenceProj <$> shuffleProjs ps
         shuffleProj p@RefProj {}      = pure p
 
-    it "should minimize cost" $ do
+    it "minimize cost and keep trust stable" $ do
       -- This test verifies that for any arbitrary project tree, the
       -- optimized version of it will have the minimum cost.
 

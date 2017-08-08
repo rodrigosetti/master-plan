@@ -1,5 +1,5 @@
 {-# LANGUAGE UnicodeSyntax #-}
-module MasterPlan.ParserSpec where
+module MasterPlan.ParserSpec (spec) where
 
 import           Data.Either                 (isRight)
 import qualified Data.Map                    as M
