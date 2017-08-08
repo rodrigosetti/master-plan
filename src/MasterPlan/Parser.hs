@@ -20,20 +20,7 @@ import           Text.Megaparsec            hiding (State, runParser)
 import           Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
 import           Text.Megaparsec.Expr
-
-{-
-* Grammar
-
-definition = project_def | predicate_def
-
-project_def = identifier "=" expression
-expression = term ((">>" | "x") term)*
-term = factor ("+" factor)*
-factor = "(" expression ")" | identifier
-
-predicate_def = identifier "(" identifier ")" "=" value
-value = number | text
--}
+import Data.List (nub)
 
 type Parser = ParsecT Void String (State ProjectSystem)
 
@@ -90,13 +77,20 @@ definition =
     structure :: Parser ()
     structure = do projName <- identifier
                    projectExpr <- symbol "=" *> expressionParser
-                   binding <- lift $ gets $ M.lookup projName . bindings
+                   sys <- lift get
+
+                   -- check if it's recursive
+                   let deps = dependencies sys projectExpr
+                   when (projName `elem` deps) $ fail $ "definition of \"" ++ projName ++ "\" is recursive"
+
+                   let binding = M.lookup projName $ bindings sys
                    newBinding <- case binding of
                                    Nothing -> pure $ ExpressionProj (defaultProjectProps { title=projName }) projectExpr
                                    Just ExpressionProj {} -> fail $ "Redefinition of \"" ++ projName ++ "\"."
                                    Just (UnconsolidatedProj p) -> pure $ ExpressionProj p projectExpr
                                    Just TaskProj {} -> fail $ "Project \"" ++ projName ++ "\" is atomic"
-                   lift $ modify (\sys -> sys { bindings = M.insert projName newBinding $ bindings sys })
+
+                   lift $ put $ sys { bindings = M.insert projName newBinding $ bindings sys }
 
     propsProp :: String -> Parser a -> (a -> ProjectProperties -> ProjectProperties) -> Parser ()
     propsProp propName valueParser modifier =
@@ -144,6 +138,14 @@ expressionParser =
     combineSum ∷ Project → Project → Project
     combineSum p1 p2 = SumProj $ p1 NE.<| [p2]
 
+
+dependencies ∷ ProjectSystem -> Project → [ProjectKey]
+dependencies sys (RefProj n)       = nub $ n : bindingDeps (M.lookup n $ bindings sys)
+  where bindingDeps (Just (ExpressionProj _ e)) = dependencies sys e
+        bindingDeps _ = []
+dependencies sys (SumProj ps)      = nub $ concatMap (dependencies sys) ps
+dependencies sys (SequenceProj ps) = nub $ concatMap (dependencies sys) ps
+dependencies sys (ProductProj ps)  = nub $ concatMap (dependencies sys) ps
 
 projectSystem :: Parser ProjectSystem
 projectSystem =
