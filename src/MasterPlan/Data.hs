@@ -9,8 +9,7 @@ Portability : POSIX
 -}
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE UnicodeSyntax   #-}
-module MasterPlan.Data ( Status(..)
-                       , Project(..)
+module MasterPlan.Data ( Project(..)
                        , ProjectProperties(..)
                        , ProjectSystem(..)
                        , ProjectBinding(..)
@@ -22,30 +21,21 @@ module MasterPlan.Data ( Status(..)
                        , defaultProjectProps
                        , defaultTaskProj
                        , cost
-                       , status
                        , progress
                        , trust
-                       , isClosed
-                       , isOpen
                        , simplify
                        , simplifyProj
                        , printStructure) where
 
 import           Control.Monad.Writer
-import           Data.Foldable        (asum)
-import           Data.List            (find)
 import qualified Data.List.NonEmpty   as NE
 import qualified Data.Map             as M
-import           Data.Maybe           (fromMaybe)
 import           Data.Semigroup       (sconcat)
 
 type Trust = Float
 type Cost = Float
 type Progress = Float
 type ProjectKey = String
-
-data Status = Ready | Blocked | Progress | Done | Cancelled
-          deriving (Eq, Show)
 
 -- |Structure of a project expression
 data Project = SumProj (NE.NonEmpty Project) |
@@ -60,7 +50,6 @@ data Project = SumProj (NE.NonEmpty Project) |
 data ProjectBinding = TaskProj { props            :: ProjectProperties
                                , reportedCost     :: Cost
                                , reportedTrust    :: Trust
-                               , reportedStatus   :: Status
                                , reportedProgress :: Progress
                                } |
                       ExpressionProj { props      :: ProjectProperties
@@ -94,24 +83,16 @@ defaultTaskProj ∷ ProjectBinding
 defaultTaskProj = TaskProj { props = defaultProjectProps
                            , reportedCost = 0
                            , reportedTrust = 1
-                           , reportedProgress = 0
-                           , reportedStatus = Ready }
-
-isOpen ∷ ProjectSystem → Project → Bool
-isOpen sys p = status sys p `elem` ([Progress, Ready, Blocked] :: [Status])
-
-isClosed ∷ ProjectSystem → Project → Bool
-isClosed sys p = not $ isOpen sys p
+                           , reportedProgress = 0 }
 
 -- | Expected cost
 cost ∷ ProjectSystem → Project → Cost
-cost sys p | isClosed sys p = 0
 cost sys (RefProj n) =
   case M.lookup n (bindings sys) of
-    Just TaskProj { reportedCost=c }    -> c
-    Just ExpressionProj { expression=p} -> cost sys p -- TODO: avoid cyclic
-    Just (UnconsolidatedProj _)         → 0 -- default
-    Nothing                             -> 0 -- should not happen
+    Just TaskProj { reportedCost=c, reportedProgress=p } -> c * (1-p) -- cost is weighted by remaining progress
+    Just ExpressionProj { expression=p}                  -> cost sys p -- TODO: avoid cyclic
+    Just (UnconsolidatedProj _)                          -> 0 -- default
+    Nothing                                              -> 0 -- should not happen
 cost sys (SequenceProj ps) = costConjunction sys ps
 cost sys (ProductProj ps) = costConjunction sys ps
 cost sys (SumProj ps) =
@@ -127,15 +108,14 @@ costConjunction sys ps =
     costs = NE.toList $ NE.map (cost sys) ps
     accTrusts = NE.toList $ NE.map product $ NE.inits $ NE.map (trust sys) ps
 
--- | Expected trust probability
+-- | Expected probability of succeeding
 trust ∷ ProjectSystem → Project → Trust
-trust sys p | isClosed sys p = 1
 trust sys (RefProj n) =
   case M.lookup n (bindings sys) of
-    Just TaskProj { reportedTrust=t }   -> t
-    Just ExpressionProj { expression=p} -> trust sys p -- TODO: avoid cyclic
-    Just (UnconsolidatedProj _)         → 1 -- default
-    Nothing                             -> 0 -- should not happen
+    Just TaskProj { reportedTrust=t, reportedProgress=p } -> p + t * (1-p)
+    Just ExpressionProj { expression=p}                   -> trust sys p -- TODO: avoid cyclic
+    Just (UnconsolidatedProj _)                           -> 1 -- default
+    Nothing                                               -> 0 -- should not happen
 trust sys (SequenceProj ps) = trustConjunction sys ps
 trust sys (ProductProj ps) = trustConjunction sys ps
 trust sys (SumProj ps) =
@@ -145,12 +125,11 @@ trustConjunction ∷ ProjectSystem → NE.NonEmpty Project → Trust
 trustConjunction sys ps = product $ NE.map (trust sys) ps
 
 progress ∷ProjectSystem → Project → Progress
-progress sys p | isClosed sys p = 1
 progress sys (RefProj n) =
   case M.lookup n (bindings sys) of
     Just TaskProj { reportedProgress=p } -> p
     Just ExpressionProj { expression=p}  -> progress sys p -- TODO: avoid cyclic
-    Just (UnconsolidatedProj _)          → 0 -- default
+    Just (UnconsolidatedProj _)          -> 0 -- default
     Nothing                              -> 0 -- should not happen
 progress sys (SequenceProj ps)   = progressConjunction sys ps
 progress sys (ProductProj ps)    = progressConjunction sys ps
@@ -158,27 +137,6 @@ progress sys (SumProj ps)        = maximum $ NE.map (progress sys) ps
 
 progressConjunction ∷ ProjectSystem → NE.NonEmpty Project → Progress
 progressConjunction sys ps = sum (NE.map (progress sys) ps) / fromIntegral (length ps)
-
-status ∷ ProjectSystem → Project → Status
-status sys (RefProj n) =
-  case M.lookup n (bindings sys) of
-    Just TaskProj { reportedProgress=p, reportedStatus=s }  -> if p>=1 then Done else s
-    Just ExpressionProj { expression=p}  -> status sys p -- TODO: avoid cyclic
-    Just (UnconsolidatedProj _)         → Ready -- default
-    Nothing                                        -> Cancelled -- should not happen
-status sys (SequenceProj ps) =
-  let rest = NE.dropWhile (isClosed sys) ps
-  in case rest of (p : _) -> status sys p
-                  []      -> Done
-status sys (ProductProj ps) =
-  statusPriority [Progress, Ready, Blocked, Cancelled, Done] sys ps
-status sys (SumProj ps) =
-  statusPriority [Done, Cancelled, Progress, Ready, Blocked] sys ps
-
-statusPriority ∷ [Status] → ProjectSystem → NE.NonEmpty Project → Status
-statusPriority priority sys ps =
-  let ss = NE.map (status sys) ps
-   in fromMaybe Done $ asum $ map (\x -> find (x ==) ss) priority
 
 -- |Simplify a project binding structure
 simplify ∷ ProjectBinding → ProjectBinding

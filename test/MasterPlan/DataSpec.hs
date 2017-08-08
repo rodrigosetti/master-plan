@@ -9,7 +9,7 @@ import           Test.QuickCheck      hiding (sample)
 
 import           Control.Monad.State
 import qualified Data.List.NonEmpty   as NE
-import           MasterPlan.Arbitrary
+import           MasterPlan.Arbitrary ()
 import           System.Random
 
 average ∷ RandomGen g ⇒ State g Float → Int → State g Float
@@ -17,12 +17,14 @@ average sample n = do tot <- replicateM n sample
                       pure $ sum tot / fromIntegral n
 
 simulate ∷ RandomGen g ⇒ ProjectSystem → Project → State g (Bool, Cost)
-simulate sys p | isClosed sys p  = pure (True, 0)
 simulate sys (RefProj n) =
    case M.lookup n (bindings sys) of
-     Just TaskProj { reportedTrust=t, reportedCost=c }      ->
+     Just TaskProj { reportedTrust=t, reportedCost=c, reportedProgress=p } ->
        do r <- state $ randomR (0, 1)
-          pure (t > r, c)
+          let remainingProgress =  1 - p
+              effectiveTrust = p + t * remainingProgress
+              effectiveCost = c * remainingProgress
+          pure (effectiveTrust > r, effectiveCost)
      Just ExpressionProj { expression=p} -> simulate sys p -- TODO: avoid cyclic
      Just (UnconsolidatedProj _)         -> pure (True, 0)
      Nothing                             -> pure (False, 0) -- should not happen
@@ -113,35 +115,3 @@ spec = do
              in cost sys p `eq` cost sys' p .&&. trust sys p `eq` trust sys' p
 
       property propSimplifyIsStable
-
-  describe "cost" $ do
-    let p1 = TaskProj { props=defaultProjectProps
-                     , reportedCost = 10
-                     , reportedTrust = 0.8
-                     , reportedProgress=1
-                     , reportedStatus = Done }
-    let p2 = TaskProj { props=defaultProjectProps
-                     , reportedCost = 5
-                     , reportedTrust = 1
-                     , reportedProgress = 0.2
-                     , reportedStatus = Progress }
-    let p3 = TaskProj { props=defaultProjectProps
-                      , reportedCost = 7
-                      , reportedTrust = 1
-                      , reportedProgress = 0
-                      , reportedStatus = Ready }
-    let p4 = TaskProj { props=defaultProjectProps
-                     , reportedCost = 2
-                     , reportedTrust = 1
-                     , reportedProgress = 0
-                     , reportedStatus = Ready }
-
-    it "is correct for sequences" $ do
-      let p = SequenceProj $ NE.fromList $ map RefProj ["p1", "p2", "p3", "p4"]
-          sys = ProjectSystem $ M.fromList $ zip ["p1", "p2", "p3", "p4"] [p1, p2, p3, p4]
-      cost sys p `shouldBe` 14
-
-    it "is correct for products" $ do
-      let p = ProductProj $ NE.fromList $ map RefProj ["p1", "p2", "p3", "p4"]
-          sys = ProjectSystem $ M.fromList $ zip ["p1", "p2", "p3", "p4"] [p1, p2, p3, p4]
-      cost sys p `shouldBe` 14

@@ -11,7 +11,6 @@ Portability : POSIX
 module MasterPlan.Backend.Identity (render) where
 
 import           Control.Monad.RWS
-import           Data.Char          (toLower)
 import           Data.List          (intercalate)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map           as M
@@ -65,7 +64,6 @@ renderBinding projName (UnconsolidatedProj p) = renderProps projName p
 renderBinding projName (p@TaskProj {}) =
     do renderProps projName $ props p
        renderProperty projName "cost" (reportedCost p) 0 show
-       renderProperty projName "status" (reportedStatus p) Ready (map toLower . show)
        renderProperty projName "trust" (reportedTrust p) 1 percentage
        renderProperty projName "progress" (reportedProgress p) 0 percentage
   where

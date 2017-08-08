@@ -78,7 +78,6 @@ Following is a list of supported properties of projects:
 | description   | text          | longer description of what the project is |
 | url           | URL           | reference in the web for more context about the project |
 | owner         | username      | name of the person responsible for execution |
-| status        | blocked,ready,progress,done,cancelled   | status of execution |
 | progress      | percentage    | how much progress has been made so far |
 | cost          | number        | estimated cost (aliases: "time", "estimation") |
 | risk          | percentage    | risk of failure |
@@ -89,10 +88,10 @@ Following is a list of supported properties of projects:
 definition = project_def | predicate_def
 
 project_def = identifier "=" expression
-expression = term ((">>" | "x") term)*
+expression = term (("->" | "*") term)*
 term = factor ("+" factor)*
 factor = "(" expression ")" | identifier
 
 predicate_def = identifier "(" identifier ")" "=" value
-value = number | text
+value = percentage | literalString
 ```

@@ -12,20 +12,13 @@ import           Test.QuickCheck.Instances ()
 instance Arbitrary ProjectProperties where
 
   arbitrary =
-      let s = getUnicodeString <$> arbitrary
+      let s = getASCIIString <$> arbitrary
           os = oneof [pure Nothing, Just <$> s]
       in ProjectProperties <$> s <*> os <*> os <*> os
 
   shrink p = (if isNothing (description p) then [] else [p { description = Nothing }]) ++
              (if isNothing (url p) then [] else [p { url = Nothing }]) ++
              (if isNothing (owner p) then [] else [p { owner = Nothing }])
-
-instance Arbitrary Status where
-
-  arbitrary = elements [ Ready, Blocked, Progress, Done, Cancelled ]
-
-  shrink Done = []
-  shrink _    = [Done]
 
 testingKeys ∷ [String]
 testingKeys = ["a", "b", "c", "d"]
@@ -53,7 +46,6 @@ instance Arbitrary ProjectBinding where
      in frequency [ (50, TaskProj <$> arbitrary
                                   <*> elements [0, 1 .. 100]
                                   <*> unitGen
-                                  <*> arbitrary
                                   <*> unitGen)
                   , (1, pure $ UnconsolidatedProj defaultProjectProps) ]
 

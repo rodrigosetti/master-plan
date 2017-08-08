@@ -56,7 +56,7 @@ parens = between (symbol "(") (symbol ")")
 
 -- |list of reserved words
 rws ∷ [String]
-rws = ["name", "description", "url", "owner", "status", "progress", "cost", "risk"]
+rws = ["name", "description", "url", "owner", "progress", "cost", "risk"]
 
 identifier ∷ Parser String
 identifier = (lexeme . try) (p >>= check)
@@ -68,13 +68,6 @@ identifier = (lexeme . try) (p >>= check)
 
 stringLiteral :: Parser String
 stringLiteral = char '"' >> manyTill L.charLiteral (char '"')
-
-statusParser :: Parser Status
-statusParser = choice ([ symbol "ready" *> pure Ready
-                       , symbol "blocked" *> pure Blocked
-                       , symbol "progress" *> pure Progress
-                       , symbol "done" *> pure Done
-                       , symbol "cancelled" *> pure Cancelled ] :: [Parser Status])
 
 percentage :: Parser Float
 percentage = do n <- L.float <* symbol "%"
@@ -89,10 +82,9 @@ definition =
             , propsProp "description" stringLiteral (\v p -> p { description = Just v})
             , propsProp "url" stringLiteral (\v p -> p { url = Just v})
             , propsProp "owner" stringLiteral (\v p -> p { owner = Just v})
-            , taskProp "status" statusParser (\v b -> case b of t@TaskProj {} -> t { reportedStatus = v }; _ -> b)
-            , taskProp "progress" percentage (\v b -> case b of t@TaskProj {} -> t { reportedProgress = v }; _ -> b)
-            , taskProp "cost" nonNegativeNumber (\v b -> case b of t@TaskProj {} -> t { reportedCost = v }; _ -> b)
-            , taskProp "trust" percentage (\v b -> case b of t@TaskProj {} -> t { reportedTrust = v }; _ -> b)
+            , taskProp  "progress" percentage (\v b -> case b of t@TaskProj {} -> t { reportedProgress = v }; _ -> b)
+            , taskProp  "cost" nonNegativeNumber (\v b -> case b of t@TaskProj {} -> t { reportedCost = v }; _ -> b)
+            , taskProp  "trust" percentage (\v b -> case b of t@TaskProj {} -> t { reportedTrust = v }; _ -> b)
             , structure ] :: [Parser ()])
   where
     structure :: Parser ()
