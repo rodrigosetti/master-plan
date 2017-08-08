@@ -6,11 +6,13 @@ import qualified Data.Map             as M
 import           MasterPlan.Data
 import           Test.Hspec
 import           Test.QuickCheck      hiding (sample)
+import Data.Maybe (fromJust)
 
 import           Control.Monad.State
 import qualified Data.List.NonEmpty   as NE
 import           MasterPlan.Arbitrary ()
 import           System.Random
+import System.Random.Shuffle (shuffle')
 
 average ∷ RandomGen g ⇒ State g Float → Int → State g Float
 average sample n = do tot <- replicateM n sample
@@ -115,3 +117,36 @@ spec = do
              in cost sys p `eq` cost sys' p .&&. trust sys p `eq` trust sys' p
 
       property propSimplifyIsStable
+
+  describe "optimize" $ do
+
+    let shuffleProjs :: NE.NonEmpty Project -> IO (NE.NonEmpty Project)
+        shuffleProjs ps = do ps' <- NE.toList <$> mapM shuffleProj ps
+                             g <- newStdGen
+                             pure $ NE.fromList $ shuffle' ps' (length ps') g
+
+        shuffleProj :: Project -> IO Project
+        shuffleProj (SumProj ps)      = SumProj <$> shuffleProjs ps
+        shuffleProj (ProductProj ps)  = ProductProj <$> shuffleProjs ps
+        shuffleProj (SequenceProj ps) = SequenceProj <$> shuffleProjs ps
+        shuffleProj p@RefProj {}      = pure p
+
+    it "should minimize cost" $ do
+      -- This test verifies that for any arbitrary project tree, the
+      -- optimized version of it will have the minimum cost.
+
+      let eq = aproximatelyEqual 0.005 0.005
+
+      let optimizeMinimizesCost :: ProjectSystem -> Property
+          optimizeMinimizesCost sys =
+            let p = expression $ fromJust $ M.lookup "root" $ bindings sys
+                op = optimizeProj sys p
+                ocost = cost sys op
+                otrust = trust sys op
+                costIsLessOrEqual p' =
+                  counterexample "cost is >" $ ocost <= c .||. ocost `eq` c where c = cost sys p'
+                trustIsSame p' = otrust `eq` t where t = trust sys p'
+            in ioProperty $ do variations <- replicateM 10 (shuffleProj p)
+                               return $ conjoin (map costIsLessOrEqual variations) .&.
+                                        conjoin (map trustIsSame variations)
+      property optimizeMinimizesCost

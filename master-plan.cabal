@@ -52,6 +52,7 @@ test-suite spec
                   , hspec
                   , QuickCheck == 2.10.*
                   , quickcheck-instances
+                  , random-shuffle
   other-modules:    MasterPlan.DataSpec
                   , MasterPlan.Arbitrary
                   , MasterPlan.ParserSpec

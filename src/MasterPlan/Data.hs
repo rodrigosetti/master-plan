@@ -25,6 +25,9 @@ module MasterPlan.Data ( Project(..)
                        , trust
                        , simplify
                        , simplifyProj
+                       , optimizeSys
+                       , optimizeBinding
+                       , optimizeProj
                        , printStructure) where
 
 import           Control.Monad.Writer
@@ -170,6 +173,27 @@ simplifyProj (SequenceProj ps) =
     reduce (SequenceProj ps') = neConcatMap reduce ps'
     reduce p                  = [simplifyProj p]
 simplifyProj p@RefProj {}     = p
+
+optimizeSys ∷ ProjectSystem → ProjectSystem
+optimizeSys sys@(ProjectSystem b) = ProjectSystem $ M.map (optimizeBinding sys) b
+
+optimizeBinding ∷ ProjectSystem → ProjectBinding → ProjectBinding
+optimizeBinding sys (ExpressionProj pr e) = ExpressionProj pr $ optimizeProj sys e
+optimizeBinding _   p                     = p
+
+-- Sort project in order that minimizes cost
+optimizeProj ∷ ProjectSystem → Project → Project
+optimizeProj sys (SumProj ps)      =
+  let f p = cost sys p / trust sys p
+  in SumProj $ NE.sortWith f $ NE.map (optimizeProj sys) ps
+optimizeProj sys (ProductProj ps)  = ProductProj $ optimizeConjunction sys ps
+optimizeProj sys (SequenceProj ps) = SequenceProj $ optimizeConjunction sys ps
+optimizeProj _   p@RefProj {}      = p
+
+optimizeConjunction ∷ ProjectSystem → NE.NonEmpty Project → NE.NonEmpty Project
+optimizeConjunction sys ps =
+  let f p = cost sys p / (1 - trust sys p)
+  in NE.sortWith f $ NE.map (optimizeProj sys) ps
 
 -- |Debugging
 printStructure ∷ Project → String
