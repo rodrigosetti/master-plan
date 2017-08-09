@@ -121,7 +121,7 @@ trust sys (SumProj ps) =
 trustConjunction ∷ ProjectSystem → NE.NonEmpty Project → Trust
 trustConjunction sys ps = product $ NE.map (trust sys) ps
 
-progress ∷ProjectSystem → Project → Progress
+progress ∷ ProjectSystem → Project → Progress
 progress sys (RefProj n) =
   case M.lookup n (bindings sys) of
     Just (TaskProj _ _ _ p)     -> p
