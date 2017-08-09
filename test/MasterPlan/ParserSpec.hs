@@ -2,7 +2,6 @@
 module MasterPlan.ParserSpec (spec) where
 
 import           Data.Either                 (isRight)
-import qualified Data.Map                    as M
 import           MasterPlan.Arbitrary        ()
 import           MasterPlan.Backend.Identity (render)
 import           MasterPlan.Data
@@ -34,29 +33,32 @@ spec =
 
     it "should reject recursive equations" $ do
 
-      let expectedError key  = Left $ "definition of \"" ++ key ++ "\" is recursive\n"
+      let expectedError _   (Right _) = False
+          expectedError key (Left s) =
+            let l = last $ lines s
+             in l == "definition of \"" ++ key ++ "\" is recursive"
 
       let wrap = unlines . map (++ ";\n")
 
       -- obvious
       let program1 = wrap ["root = a + b + root"]
 
-      runParser "recursive1" program1 `shouldBe` expectedError "root"
+      runParser "recursive1" program1 `shouldSatisfy` expectedError "root"
 
       let program2 = wrap [ "root = a + b"
                           , "a = x * root" ]
 
-      runParser "recursive2" program2 `shouldBe` expectedError "a"
+      runParser "recursive2" program2 `shouldSatisfy` expectedError "a"
 
       let program3 = wrap [ "root = x + y"
                           , "a = b * c"
                           , "c = d -> a" ]
 
-      runParser "recursive3" program3 `shouldBe` expectedError "c"
+      runParser "recursive3" program3 `shouldSatisfy` expectedError "c"
 
       let program4 = wrap [ "root = a + y"
                           , "d = x + root"
                           , "a = b * c"
                           , "c = d -> e" ]
 
-      runParser "recursive4" program4 `shouldBe` expectedError "c"
+      runParser "recursive4" program4 `shouldSatisfy` expectedError "c"

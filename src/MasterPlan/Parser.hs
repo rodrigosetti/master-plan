@@ -50,15 +50,17 @@ identifier ∷ Parser String
 identifier = (lexeme . try) (p >>= check)
   where
     p       = (:) <$> letterChar <*> many alphaNumChar
-    check x = if x `elem` rws
-                then fail $ "keyword " ++ show x ++ " cannot be an identifier"
-                else return x
+    check x
+      | x `elem` rws = fail $ "keyword " ++ show x ++ " cannot be an identifier"
+      | otherwise    = pure x
 
 stringLiteral :: Parser String
 stringLiteral = char '"' >> manyTill L.charLiteral (char '"')
 
 percentage :: Parser Float
-percentage = do n <- L.float <* symbol "%"
+percentage = do n <- L.float <?> "percentage value"
+                when (n > 100) $ fail $ "number " ++ show n ++ " is not within (0,100) range"
+                void $ symbol "%"
                 pure $ n / 100
 
 nonNegativeNumber :: Parser Float
@@ -110,34 +112,28 @@ definition =
        setter _ val (Just p@TaskProj {}) = pure $ modifier val p
 
     property ∷ String → Parser a → (String -> a -> Maybe ProjectBinding -> Parser ProjectBinding) -> Parser ()
-    property propName valueParser setter = do _ <- symbol propName
-                                              projName <- parens identifier
-                                              mBinding <- lift $ do b <- gets bindings
-                                                                    pure $ M.lookup projName b
-                                              value <- symbol "=" *> valueParser
-                                              newBinding <- setter projName value mBinding
-                                              let modifySys :: ProjectSystem -> ProjectSystem
-                                                  modifySys sys = sys { bindings = M.insert projName newBinding $ bindings sys }
-                                              lift $ modify modifySys
+    property propName valueParser setter =
+       do void $ symbol propName
+          projName <- parens identifier
+          mBinding <- lift $ M.lookup projName <$> gets bindings
+          value <- symbol "=" *> valueParser
+          newBinding <- setter projName value mBinding
+          let modifySys :: ProjectSystem -> ProjectSystem
+              modifySys sys = sys { bindings = M.insert projName newBinding $ bindings sys }
+          lift $ modify modifySys
 
 expressionParser ∷ Parser Project
 expressionParser =
     simplifyProj <$> makeExprParser term table <?> "expression"
   where
     term = parens expressionParser <|> (RefProj <$> identifier)
-    table = [[binary "*" combineProduct]
-            ,[binary "->" combineSequence]
-            ,[binary "+" combineSum]]
+    table = [[binary "*" (combineWith ProductProj)]
+            ,[binary "->" (combineWith SequenceProj)]
+            ,[binary "+" (combineWith SumProj)]]
     binary  op f = InfixL  (f <$ symbol op)
 
-    combineProduct ∷ Project → Project → Project
-    combineProduct p1 p2 = ProductProj $ p1 NE.<| [p2]
-
-    combineSequence ∷ Project → Project → Project
-    combineSequence p1 p2 = SequenceProj $ p1 NE.<| [p2]
-
-    combineSum ∷ Project → Project → Project
-    combineSum p1 p2 = SumProj $ p1 NE.<| [p2]
+    combineWith :: (NE.NonEmpty Project -> Project) -> Project -> Project -> Project
+    combineWith c p1 p2 = c $ p1 NE.<| [p2]
 
 dependencies ∷ ProjectSystem -> Project → [ProjectKey]
 dependencies sys = everything (++) ([] `mkQ` collectDep)
@@ -159,5 +155,5 @@ runParser :: String -> String -> Either String ProjectSystem
 runParser filename contents = let mr = runParserT projectSystem filename contents
                                   initialPS = ProjectSystem M.empty
                               in case evalState mr initialPS of
-                                    Left e -> Left $ parseErrorTextPretty e
+                                    Left e -> Left $ parseErrorPretty' contents e
                                     Right v -> Right v

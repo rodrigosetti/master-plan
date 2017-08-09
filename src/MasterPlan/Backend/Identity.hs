@@ -28,7 +28,7 @@ render (ProjectSystem bs) =
 type RenderMonad = RWS () String (M.Map String ProjectBinding)
 
 renderLine ∷ String → RenderMonad ()
-renderLine s = tell s >> tell ";\n"
+renderLine s = tell $ s ++ ";\n"
 
 renderName ∷ ProjectKey → RenderMonad ()
 renderName projName =
@@ -38,12 +38,9 @@ renderName projName =
        Just b  -> do renderBinding projName b
                      tell "\n" -- empty line to separate bindings
                      modify $ M.delete projName
-                     let names = case b of
-                                  ExpressionProj _ e -> dependencies e
-                                  _                  -> []
-                     mapM_ renderName names
+                     mapM_ renderName $ dependencies b
 
-dependencies ∷ Project → [ProjectKey]
+dependencies ∷ ProjectBinding → [ProjectKey]
 dependencies = nub . everything (++) ([] `mkQ` collectDep)
   where
     collectDep (RefProj n) = [n]
