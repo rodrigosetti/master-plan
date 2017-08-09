@@ -21,6 +21,7 @@ import           Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
 import           Text.Megaparsec.Expr
 import Data.List (nub)
+import Data.Generics
 
 type Parser = ParsecT Void String (State ProjectSystem)
 
@@ -97,9 +98,7 @@ definition =
        property propName valueParser setter
      where
        setter projName val Nothing = pure $ UnconsolidatedProj $ modifier val $ defaultProjectProps { title=projName }
-       setter _ val (Just (TaskProj pr c t p)) = pure $ TaskProj (modifier val pr) c t p
-       setter _ val (Just (ExpressionProj pr p)) = pure $ ExpressionProj (modifier val pr) p
-       setter _ val (Just (UnconsolidatedProj pr)) = pure $ UnconsolidatedProj $ modifier val pr
+       setter _ val (Just p) = pure $ everywhere (mkT $ modifier val) p
 
     taskProp :: String -> Parser a -> (a -> ProjectBinding -> ProjectBinding) -> Parser ()
     taskProp propName valueParser modifier =
@@ -140,14 +139,11 @@ expressionParser =
     combineSum ∷ Project → Project → Project
     combineSum p1 p2 = SumProj $ p1 NE.<| [p2]
 
-
 dependencies ∷ ProjectSystem -> Project → [ProjectKey]
-dependencies sys (RefProj n)       = nub $ n : bindingDeps (M.lookup n $ bindings sys)
-  where bindingDeps (Just (ExpressionProj _ e)) = dependencies sys e
-        bindingDeps _ = []
-dependencies sys (SumProj ps)      = nub $ concatMap (dependencies sys) ps
-dependencies sys (SequenceProj ps) = nub $ concatMap (dependencies sys) ps
-dependencies sys (ProductProj ps)  = nub $ concatMap (dependencies sys) ps
+dependencies sys = everything (++) ([] `mkQ` collectDep)
+  where
+    collectDep (RefProj n) = nub $ n : everything (++) ([] `mkQ` collectDep) (M.lookup n $ bindings sys)
+    collectDep _ = []
 
 projectSystem :: Parser ProjectSystem
 projectSystem =

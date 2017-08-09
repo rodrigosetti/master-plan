@@ -11,7 +11,8 @@ Portability : POSIX
 module MasterPlan.Backend.Identity (render) where
 
 import           Control.Monad.RWS
-import           Data.List          (intercalate)
+import           Data.Generics
+import           Data.List          (intercalate, nub)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map           as M
 import           Data.Maybe         (fromMaybe)
@@ -43,10 +44,10 @@ renderName projName =
                      mapM_ renderName names
 
 dependencies ∷ Project → [ProjectKey]
-dependencies (RefProj n)       = [n]
-dependencies (SumProj ps)      = concatMap dependencies ps
-dependencies (SequenceProj ps) = concatMap dependencies ps
-dependencies (ProductProj ps)  = concatMap dependencies ps
+dependencies = nub . everything (++) ([] `mkQ` collectDep)
+  where
+    collectDep (RefProj n) = [n]
+    collectDep _           = []
 
 renderProps ∷ String → ProjectProperties → RenderMonad ()
 renderProps projName p = do renderProperty projName "name" (title p) projName show

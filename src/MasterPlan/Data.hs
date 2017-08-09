@@ -7,8 +7,9 @@ Maintainer  : rodrigosetti@email.com
 Stability   : experimental
 Portability : POSIX
 -}
-{-# LANGUAGE OverloadedLists #-}
-{-# LANGUAGE UnicodeSyntax   #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE OverloadedLists    #-}
+{-# LANGUAGE UnicodeSyntax      #-}
 module MasterPlan.Data ( Project(..)
                        , ProjectProperties(..)
                        , ProjectSystem(..)
@@ -25,16 +26,17 @@ module MasterPlan.Data ( Project(..)
                        , trust
                        , simplify
                        , simplifyProj
-                       , optimizeSys
-                       , optimizeBinding
                        , optimizeProj
                        , printStructure) where
 
 import           Control.Monad.Writer
+import           Data.Generics
 import           Data.List.NonEmpty   (NonEmpty ((:|)))
 import qualified Data.List.NonEmpty   as NE
 import qualified Data.Map             as M
 import           Data.Semigroup       (sconcat)
+
+-- * Types
 
 type Trust = Float
 type Cost = Float
@@ -46,7 +48,7 @@ data Project = SumProj (NE.NonEmpty Project)
              | ProductProj (NE.NonEmpty Project)
              | SequenceProj (NE.NonEmpty Project)
              | RefProj ProjectKey
-            deriving (Eq, Show)
+            deriving (Eq, Show, Data, Typeable)
 
 -- |A binding of a name can refer to an expression. If there are no
 -- associated expressions (i.e. equation) then it can have task-level
@@ -54,19 +56,19 @@ data Project = SumProj (NE.NonEmpty Project)
 data ProjectBinding = TaskProj ProjectProperties Cost Trust Progress
                     | ExpressionProj ProjectProperties Project
                     | UnconsolidatedProj ProjectProperties
-                   deriving (Eq, Show)
+                   deriving (Eq, Show, Data, Typeable)
 
 -- |Any binding (with a name) may have associated properties
 data ProjectProperties = ProjectProperties { title       :: String
                                            , description :: Maybe String
                                            , url         :: Maybe String
                                            , owner       :: Maybe String
-                                           } deriving (Eq, Show)
+                                           } deriving (Eq, Show, Data, Typeable)
 
 -- |A project system defines the bindins (mapping from names to expressions or tasks)
 -- and properties, which can be associated to any binding
 newtype ProjectSystem = ProjectSystem { bindings :: M.Map ProjectKey ProjectBinding }
-                          deriving (Eq, Show)
+                          deriving (Eq, Show, Data, Typeable)
 
 rootKey ∷ ProjectKey
 rootKey = "root"
@@ -134,9 +136,8 @@ progressConjunction ∷ ProjectSystem → NE.NonEmpty Project → Progress
 progressConjunction sys ps = sum (NE.map (progress sys) ps) / fromIntegral (length ps)
 
 -- |Simplify a project binding structure
-simplify ∷ ProjectBinding → ProjectBinding
-simplify (ExpressionProj pr e) = ExpressionProj pr $ simplifyProj e
-simplify p                     = p
+simplify ∷ ProjectSystem → ProjectSystem
+simplify = everywhere (mkT simplifyProj)
 
 -- |Helper function: concatMap for NonEmpty
 neConcatMap ∷ (a → NE.NonEmpty b) → NE.NonEmpty a → NE.NonEmpty b
@@ -165,13 +166,6 @@ simplifyProj (SequenceProj ps) =
     reduce (SequenceProj ps') = neConcatMap reduce ps'
     reduce p                  = [simplifyProj p]
 simplifyProj p@RefProj {}     = p
-
-optimizeSys ∷ ProjectSystem → ProjectSystem
-optimizeSys sys@(ProjectSystem b) = ProjectSystem $ M.map (optimizeBinding sys) b
-
-optimizeBinding ∷ ProjectSystem → ProjectBinding → ProjectBinding
-optimizeBinding sys (ExpressionProj pr e) = ExpressionProj pr $ optimizeProj sys e
-optimizeBinding _   p                     = p
 
 -- Sort project in order that minimizes cost
 optimizeProj ∷ ProjectSystem → Project → Project

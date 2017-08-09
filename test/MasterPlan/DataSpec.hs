@@ -102,7 +102,7 @@ spec = do
     it "is stable" $ do
       let propSimplifyIsStable :: ProjectSystem -> Property
           propSimplifyIsStable sys =
-            let sys' = sys { bindings = M.map simplify $ bindings sys }
+            let sys' = simplify sys
                 p    = RefProj rootKey
              in cost sys p `eq` cost sys' p .&&. trust sys p `eq` trust sys' p
 

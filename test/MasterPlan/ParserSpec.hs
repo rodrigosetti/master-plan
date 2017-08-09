@@ -26,7 +26,7 @@ spec =
 
       let propertyParseAndOutputIdentity ∷ ProjectSystem → Property
           propertyParseAndOutputIdentity sys =
-            let sys' = sys { bindings = M.map simplify $ bindings sys}
+            let sys' = simplify sys
                 parsed = runParser "test2" (render sys')
              in isRight parsed ==> parsed === Right sys'
 

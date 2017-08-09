@@ -34,6 +34,7 @@ library
                        , megaparsec == 6.0.*
                        , containers
                        , mtl
+                       , syb
     exposed-modules:     MasterPlan.Data
                        , MasterPlan.Parser
                        , MasterPlan.Backend.Identity
