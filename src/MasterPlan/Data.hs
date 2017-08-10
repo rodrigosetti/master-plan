@@ -3,7 +3,7 @@ Module      : MasterPlan.Data
 Description : Types for defining project and project systems
 Copyright   : (c) Rodrigo Setti, 2017
 License     : MIT
-Maintainer  : rodrigosetti@email.com
+Maintainer  : rodrigosetti@gmail.com
 Stability   : experimental
 Portability : POSIX
 -}

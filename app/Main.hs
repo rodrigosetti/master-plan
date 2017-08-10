@@ -1,12 +1,23 @@
+{-|
+Module      : Main
+Description : Parses command line and dispatches to correct backend
+Copyright   : (c) Rodrigo Setti, 2017
+License     : MIT
+Maintainer  : rodrigosetti@gmail.com
+Stability   : experimental
+Portability : POSIX
+-}
 {-# LANGUAGE UnicodeSyntax #-}
 module Main (main) where
 
 import           Data.List                   (intercalate)
 import qualified Data.List.NonEmpty          as NE
 import qualified Data.Map                    as M
-import           Data.Maybe                  (catMaybes)
+import           Data.Maybe                  (catMaybes, fromMaybe)
 import           Data.Semigroup              ((<>))
-import qualified MasterPlan.Backend.Identity as ID
+import qualified MasterPlan.Backend.Graph    as BG
+import qualified MasterPlan.Backend.Identity as BI
+import qualified MasterPlan.Backend.Text     as BT
 import           MasterPlan.Data
 import qualified MasterPlan.Parser           as P
 import           Options.Applicative
@@ -99,21 +110,24 @@ filterBinding _   _ b = Just b
 
 masterPlan ∷ Opts → IO ()
 masterPlan opts =
-    do let filename = inputPath opts
-       contents <- readFile filename
+    do contents <- readFile filename
        case P.runParser filename contents of
           Left e    -> hPutStr stderr e
           Right sys@(ProjectSystem b) ->
             render $ maybeOptimize $ ProjectSystem $ M.mapMaybe
                                                     (filterBinding sys $ projFilter opts) b
   where
+    filename = inputPath opts
+
     maybeOptimize = if prioritize opts then optimizeSys else id
+
+    outputToFileOrOut s = case outputPath opts of
+                             Nothing   -> putStr s
+                             Just path -> writeFile path s
 
     render sys =
       case renderMode opts of
-        IdentityRenderMode -> do let result = ID.render sys $ properties opts
-                                 case outputPath opts of
-                                   Nothing   -> putStr result
-                                   Just path -> writeFile path result
-        TextRenderMode -> error "not implemented"
-        GraphRenderMode -> error "not implemented"
+        IdentityRenderMode -> outputToFileOrOut $ BI.render sys $ properties opts
+        TextRenderMode -> outputToFileOrOut $ BT.render sys $ properties opts
+        GraphRenderMode -> do let outfile = fromMaybe (filename ++ ".png") $ outputPath opts
+                              BG.render outfile sys $ properties opts

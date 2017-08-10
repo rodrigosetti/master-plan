@@ -3,7 +3,7 @@ Module      : MasterPlan.Backend.Identity
 Description : a backend that renders to a text that can be parsed
 Copyright   : (c) Rodrigo Setti, 2017
 License     : MIT
-Maintainer  : rodrigosetti@email.com
+Maintainer  : rodrigosetti@gmail.com
 Stability   : experimental
 Portability : POSIX
 -}

@@ -39,6 +39,8 @@ library
     exposed-modules:     MasterPlan.Data
                        , MasterPlan.Parser
                        , MasterPlan.Backend.Identity
+                       , MasterPlan.Backend.Graph
+                       , MasterPlan.Backend.Text
 
 test-suite spec
   type:             exitcode-stdio-1.0

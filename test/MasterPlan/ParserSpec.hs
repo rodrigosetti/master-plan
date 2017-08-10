@@ -13,10 +13,12 @@ spec ∷ Spec
 spec =
   describe "parser" $ do
 
+    let allProps = [minBound :: ProjProperty ..]
+
     it "rendered should be parseable" $ do
       let renderedIsParseable ∷ ProjectSystem → Property
           renderedIsParseable sys =
-            let rendered = render sys
+            let rendered = render sys allProps
              in counterexample rendered $ isRight (runParser "test1" rendered)
 
       property $ withMaxSuccess 50 renderedIsParseable
@@ -26,7 +28,7 @@ spec =
       let propertyParseAndOutputIdentity ∷ ProjectSystem → Property
           propertyParseAndOutputIdentity sys =
             let sys' = simplify sys
-                parsed = runParser "test2" (render sys')
+                parsed = runParser "test2" (render sys' allProps)
              in isRight parsed ==> parsed === Right sys'
 
       property $ withMaxSuccess 50 propertyParseAndOutputIdentity

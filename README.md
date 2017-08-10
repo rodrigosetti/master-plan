@@ -38,17 +38,33 @@ The tool is able to build visualizations and reports from the plan file.
 Ideally, the plan file should be kept in version control so that execution and
 planning progress can be recorded.
 
-### Commands
+### Command line Arguments
 
-The `mp` command line tool supports the following commands:
+```
+master-plan - project management tool for hackers
 
- * `prioritize` - list, in order of priority, the projects ready for execution.
- * `render` - generate a report output, specified by one of the backend formats.
+Usage: master-plan [-i|--input FILENAME] [-o|--output FILENAME]
+                   [--progress-below N]
+                   [--hide title|description|url|owner|cost|trust|progress]
+                   [-p|--prioritize] (-m|--mode identity|text|graph)
+  See documentation on how to write project plan files
+
+Available options:
+  -i,--input FILENAME      plan file to read from (default: "master.plan")
+  -o,--output FILENAME     output file name
+  --progress-below N       only display projects which progress is < N%
+  --hide title|description|url|owner|cost|trust|progress
+                           hide a particular property
+  -p,--prioritize          prioritize projects to minimize cost
+  -m,--mode identity|text|graph
+                           render mode
+  -h,--help                Show this help text
+```
 
 ### Syntax
 
-Comments are preceded by hashtag (`#`), and extend to the end of line
-(like Shell and Python).
+Comments are C-style: multiline in between `/*` and `*/`, and single line starts
+with `//`, extending to the end of line. Every definition must end with semicolon.
 
 Everything else are definitions, in the form `lrs = rhs`.
 There are two kinds of definitions with respect to `lrs` (left hand side):
@@ -66,7 +82,7 @@ are three operators:
 
  * `p = a + b` - Sum: `p` is executed when `a` or `b` is executed.
  * `p = a x b` - Product: `p` is executed when `a` and `b` is executed.
- * `p = a > b` - Sequence: `p` is executed when `a` and `b` is executed, in order.
+ * `p = a -> b` - Sequence: `p` is executed when `a` and `b` is executed, in order.
 
 #### Properties
 
@@ -74,17 +90,18 @@ Following is a list of supported properties of projects:
 
 | Property name | Expected Type | Description |
 |---------------|---------------|-------------|
-| name          | text          | title of the project |
+| title         | text          | title of the project |
 | description   | text          | longer description of what the project is |
 | url           | URL           | reference in the web for more context about the project |
 | owner         | username      | name of the person responsible for execution |
 | progress      | percentage    | how much progress has been made so far |
-| cost          | number        | estimated cost (aliases: "time", "estimation") |
-| risk          | percentage    | risk of failure |
+| cost          | number        | estimated cost |
+| trust         | percentage    | probability of success |
 
 #### Grammar
 
 ```
+plan = (definition ";")*
 definition = project_def | predicate_def
 
 project_def = identifier "=" expression
@@ -94,4 +111,6 @@ factor = "(" expression ")" | identifier
 
 predicate_def = identifier "(" identifier ")" "=" value
 value = percentage | literalString
+
+percentage = nonNegativeNumber "%"
 ```

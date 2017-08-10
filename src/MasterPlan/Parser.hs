@@ -3,7 +3,7 @@ Module      : MasterPlan.Parser
 Description : export parser for project systems
 Copyright   : (c) Rodrigo Setti, 2017
 License     : MIT
-Maintainer  : rodrigosetti@email.com
+Maintainer  : rodrigosetti@gmail.com
 Stability   : experimental
 Portability : POSIX
 -}
