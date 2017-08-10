@@ -15,6 +15,7 @@ module MasterPlan.Data ( Project(..)
                        , ProjectSystem(..)
                        , ProjectBinding(..)
                        , ProjectKey
+                       , ProjProperty(..)
                        , Trust
                        , Cost
                        , Progress
@@ -26,6 +27,7 @@ module MasterPlan.Data ( Project(..)
                        , trust
                        , simplify
                        , simplifyProj
+                       , optimizeSys
                        , optimizeProj
                        , printStructure) where
 
@@ -64,6 +66,18 @@ data ProjectProperties = ProjectProperties { title       :: String
                                            , url         :: Maybe String
                                            , owner       :: Maybe String
                                            } deriving (Eq, Show, Data, Typeable)
+
+data ProjProperty = PTitle | PDescription | PUrl | POwner | PCost | PTrust | PProgress
+  deriving (Eq, Enum, Bounded)
+
+instance Show ProjProperty where
+  show PTitle       = "title"
+  show PDescription = "description"
+  show PUrl         = "url"
+  show POwner       = "owner"
+  show PCost        = "cost"
+  show PTrust       = "trust"
+  show PProgress    = "progress"
 
 -- |A project system defines the bindins (mapping from names to expressions or tasks)
 -- and properties, which can be associated to any binding
@@ -166,6 +180,9 @@ simplifyProj (SequenceProj ps) =
     reduce (SequenceProj ps') = neConcatMap reduce ps'
     reduce p                  = [simplifyProj p]
 simplifyProj p@RefProj {}     = p
+
+optimizeSys ∷ ProjectSystem → ProjectSystem
+optimizeSys sys = everywhere (mkT $ optimizeProj sys) sys
 
 -- Sort project in order that minimizes cost
 optimizeProj ∷ ProjectSystem → Project → Project

@@ -44,7 +44,7 @@ parens = between (symbol "(") (symbol ")")
 
 -- |list of reserved words
 rws ∷ [String]
-rws = ["name", "description", "url", "owner", "progress", "cost", "risk"]
+rws = map show [minBound :: ProjProperty ..]
 
 identifier ∷ Parser String
 identifier = (lexeme . try) (p >>= check)
@@ -68,13 +68,13 @@ nonNegativeNumber = L.float
 
 definition ∷ Parser ()
 definition =
-    choice ([ propsProp "name" stringLiteral (\v p -> p { title = v })
-            , propsProp "description" stringLiteral (\v p -> p { description = Just v})
-            , propsProp "url" stringLiteral (\v p -> p { url = Just v})
-            , propsProp "owner" stringLiteral (\v p -> p { owner = Just v})
-            , taskProp  "cost" nonNegativeNumber (\v b -> case b of TaskProj r _ t p -> TaskProj r v t p; _ -> b)
-            , taskProp  "trust" percentage (\v b -> case b of TaskProj r c _ p -> TaskProj r c v p; _ -> b)
-            , taskProp  "progress" percentage (\v b -> case b of TaskProj r c t _ -> TaskProj r c t v; _ -> b)
+    choice ([ propsProp PTitle stringLiteral (\v p -> p { title = v })
+            , propsProp PDescription stringLiteral (\v p -> p { description = Just v})
+            , propsProp PUrl stringLiteral (\v p -> p { url = Just v})
+            , propsProp POwner stringLiteral (\v p -> p { owner = Just v})
+            , taskProp  PCost nonNegativeNumber (\v b -> case b of TaskProj r _ t p -> TaskProj r v t p; _ -> b)
+            , taskProp  PTrust percentage (\v b -> case b of TaskProj r c _ p -> TaskProj r c v p; _ -> b)
+            , taskProp  PProgress percentage (\v b -> case b of TaskProj r c t _ -> TaskProj r c t v; _ -> b)
             , structure ] :: [Parser ()])
   where
     structure :: Parser ()
@@ -95,25 +95,25 @@ definition =
 
                    lift $ put $ sys { bindings = M.insert projName newBinding $ bindings sys }
 
-    propsProp :: String -> Parser a -> (a -> ProjectProperties -> ProjectProperties) -> Parser ()
-    propsProp propName valueParser modifier =
-       property propName valueParser setter
+    propsProp :: ProjProperty -> Parser a -> (a -> ProjectProperties -> ProjectProperties) -> Parser ()
+    propsProp prop valueParser modifier =
+       property prop valueParser setter
      where
        setter projName val Nothing = pure $ UnconsolidatedProj $ modifier val $ defaultProjectProps { title=projName }
        setter _ val (Just p) = pure $ everywhere (mkT $ modifier val) p
 
-    taskProp :: String -> Parser a -> (a -> ProjectBinding -> ProjectBinding) -> Parser ()
-    taskProp propName valueParser modifier =
-       property propName valueParser setter
+    taskProp :: ProjProperty -> Parser a -> (a -> ProjectBinding -> ProjectBinding) -> Parser ()
+    taskProp prop valueParser modifier =
+       property prop valueParser setter
      where
        setter projName val Nothing = pure $ modifier val $ defaultTaskProj defaultProjectProps { title=projName }
        setter projName _ (Just ExpressionProj {}) = fail $ "Project \"" ++ projName ++ "\" is not atomic."
        setter _ val (Just (UnconsolidatedProj p)) = pure $ modifier val $ defaultTaskProj p
        setter _ val (Just p@TaskProj {}) = pure $ modifier val p
 
-    property ∷ String → Parser a → (String -> a -> Maybe ProjectBinding -> Parser ProjectBinding) -> Parser ()
-    property propName valueParser setter =
-       do void $ symbol propName
+    property ∷ ProjProperty → Parser a → (String -> a -> Maybe ProjectBinding -> Parser ProjectBinding) -> Parser ()
+    property prop valueParser setter =
+       do void $ symbol $ show prop
           projName <- parens identifier
           mBinding <- lift $ M.lookup projName <$> gets bindings
           value <- symbol "=" *> valueParser

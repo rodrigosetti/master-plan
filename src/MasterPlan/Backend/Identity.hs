@@ -19,13 +19,13 @@ import           Data.Maybe         (fromMaybe)
 import           MasterPlan.Data
 
 -- |Plain text renderer
-render ∷ ProjectSystem → String
-render (ProjectSystem bs) =
-   snd $ evalRWS (renderName "root" >> renderRest) () bs
+render ∷ ProjectSystem → [ProjProperty] -> String
+render (ProjectSystem bs) whitelist =
+   snd $ evalRWS (renderName "root" >> renderRest) whitelist bs
  where
    renderRest = gets M.keys >>= mapM_ renderName
 
-type RenderMonad = RWS () String (M.Map String ProjectBinding)
+type RenderMonad = RWS [ProjProperty] String (M.Map String ProjectBinding)
 
 renderLine ∷ String → RenderMonad ()
 renderLine s = tell $ s ++ ";\n"
@@ -35,8 +35,8 @@ renderName projName =
   do mb <- gets $ M.lookup projName
      case mb of
        Nothing -> pure ()
-       Just b  -> do renderBinding projName b
-                     tell "\n" -- empty line to separate bindings
+       Just b  -> do rendered <- renderBinding projName b
+                     when rendered $ tell "\n" -- empty line to separate bindings
                      modify $ M.delete projName
                      mapM_ renderName $ dependencies b
 
@@ -46,31 +46,35 @@ dependencies = nub . everything (++) ([] `mkQ` collectDep)
     collectDep (RefProj n) = [n]
     collectDep _           = []
 
-renderProps ∷ String → ProjectProperties → RenderMonad ()
-renderProps projName p = do renderProperty projName "name" (title p) projName show
-                            renderProperty projName "description" (description p) Nothing (show . fromMaybe "")
-                            renderProperty projName "url" (url p) Nothing (show . fromMaybe "")
-                            renderProperty projName "owner" (owner p) Nothing (show . fromMaybe "")
+renderProps ∷ String → ProjectProperties → RenderMonad Bool
+renderProps projName p = or <$> sequence [ renderProperty projName PTitle (title p) projName show
+                                         , renderProperty projName PDescription (description p) Nothing (show . fromMaybe "")
+                                         , renderProperty projName PUrl (url p) Nothing (show . fromMaybe "")
+                                         , renderProperty projName POwner (owner p) Nothing (show . fromMaybe "") ]
 
-renderProperty ∷ Eq a ⇒ ProjectKey → String → a → a → (a → String) → RenderMonad ()
-renderProperty projName propName val def toStr
-  | val == def = pure ()
-  | otherwise = renderLine $ propName ++ "(" ++ projName ++ ") = " ++ toStr val
+renderProperty ∷ Eq a ⇒ ProjectKey → ProjProperty → a → a → (a → String) → RenderMonad Bool
+renderProperty projName prop val def toStr
+  | val == def = pure False
+  | otherwise = do whitelisted <- asks (prop `elem`)
+                   when whitelisted $
+                        renderLine $ show prop ++ "(" ++ projName ++ ") = " ++ toStr val
+                   pure whitelisted
 
-renderBinding ∷ ProjectKey → ProjectBinding → RenderMonad ()
+renderBinding ∷ ProjectKey → ProjectBinding → RenderMonad Bool
 renderBinding projName (UnconsolidatedProj p) = renderProps projName p
 renderBinding projName (TaskProj props c t p) =
-    do renderProps projName props
-       renderProperty projName "cost" c 0 show
-       renderProperty projName "trust" t 1 percentage
-       renderProperty projName "progress" p 0 percentage
+    or <$> sequence [ renderProps projName props
+                    , renderProperty projName PCost c 0 show
+                    , renderProperty projName PTrust t 1 percentage
+                    , renderProperty projName PProgress p 0 percentage ]
   where
     percentage n = show (n * 100) ++ "%"
 
 
 renderBinding projName (ExpressionProj pr e) =
-    do renderProps projName pr
+    do void $ renderProps projName pr
        renderLine $ projName ++ " = " ++ expressionToStr False e
+       pure True
   where
     combinedEToStr parens op ps = let sube = map (expressionToStr True) $ NE.toList ps
                                       s = intercalate (" " ++ op ++ " ") sube
