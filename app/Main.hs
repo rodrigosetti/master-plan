@@ -15,7 +15,9 @@ import qualified Data.List.NonEmpty          as NE
 import qualified Data.Map                    as M
 import           Data.Maybe                  (catMaybes, fromMaybe)
 import           Data.Semigroup              ((<>))
+import qualified Data.Text.IO                as TIO
 import qualified MasterPlan.Backend.Graph    as BG
+import qualified MasterPlan.Backend.Html     as BH
 import qualified MasterPlan.Backend.Identity as BI
 import qualified MasterPlan.Backend.Text     as BT
 import           MasterPlan.Data
@@ -40,7 +42,7 @@ noFilter = ProjFilter $ const True
 instance Show ProjFilter where
   show _ = "ProjFilter"
 
-data RenderMode = IdentityRenderMode | TextRenderMode | GraphRenderMode
+data RenderMode = IdentityRenderMode | TextRenderMode | GraphRenderMode | HtmlMode
   deriving (Eq, Show)
 
 readEnum ∷ [(String, a)] → ReadM a
@@ -73,7 +75,8 @@ cmdParser = Opts <$> strOption ( long "input"
     propertyNames = map (\p -> (show p, p)) [minBound :: ProjProperty ..]
     nameRenderModes = [ ("identity", IdentityRenderMode)
                       , ("text", TextRenderMode)
-                      , ("graph", GraphRenderMode) ]
+                      , ("graph", GraphRenderMode)
+                      , ("html", HtmlMode) ]
     property = readEnum propertyNames
     parseRenderMode = readEnum nameRenderModes
 
@@ -110,7 +113,7 @@ filterBinding _   _ b = Just b
 
 masterPlan ∷ Opts → IO ()
 masterPlan opts =
-    do contents <- readFile filename
+    do contents <- TIO.readFile filename
        case P.runParser filename contents of
           Left e    -> hPutStr stderr e
           Right sys@(ProjectSystem b) ->
@@ -122,12 +125,13 @@ masterPlan opts =
     maybeOptimize = if prioritize opts then optimizeSys else id
 
     outputToFileOrOut s = case outputPath opts of
-                             Nothing   -> putStr s
-                             Just path -> writeFile path s
+                             Nothing   -> TIO.putStr s
+                             Just path -> TIO.writeFile path s
 
     render sys =
       case renderMode opts of
         IdentityRenderMode -> outputToFileOrOut $ BI.render sys $ properties opts
         TextRenderMode -> outputToFileOrOut $ BT.render sys $ properties opts
+        HtmlMode -> outputToFileOrOut $ BH.render sys $ properties opts
         GraphRenderMode -> do let outfile = fromMaybe (filename ++ ".png") $ outputPath opts
                               BG.render outfile sys $ properties opts

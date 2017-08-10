@@ -46,7 +46,7 @@ master-plan - project management tool for hackers
 Usage: master-plan [-i|--input FILENAME] [-o|--output FILENAME]
                    [--progress-below N]
                    [--hide title|description|url|owner|cost|trust|progress]
-                   [-p|--prioritize] (-m|--mode identity|text|graph)
+                   [-p|--prioritize] (-m|--mode identity|text|graph|html)
   See documentation on how to write project plan files
 
 Available options:
@@ -56,7 +56,7 @@ Available options:
   --hide title|description|url|owner|cost|trust|progress
                            hide a particular property
   -p,--prioritize          prioritize projects to minimize cost
-  -m,--mode identity|text|graph
+  -m,--mode identity|text|graph|html
                            render mode
   -h,--help                Show this help text
 ```

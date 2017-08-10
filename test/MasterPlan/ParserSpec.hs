@@ -1,7 +1,10 @@
-{-# LANGUAGE UnicodeSyntax #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE UnicodeSyntax     #-}
 module MasterPlan.ParserSpec (spec) where
 
 import           Data.Either                 (isRight)
+import           Data.Monoid                 ((<>))
+import qualified Data.Text                   as T
 import           MasterPlan.Arbitrary        ()
 import           MasterPlan.Backend.Identity (render)
 import           MasterPlan.Data
@@ -19,7 +22,7 @@ spec =
       let renderedIsParseable ∷ ProjectSystem → Property
           renderedIsParseable sys =
             let rendered = render sys allProps
-             in counterexample rendered $ isRight (runParser "test1" rendered)
+             in counterexample (T.unpack rendered) $ isRight (runParser "test1" rendered)
 
       property $ withMaxSuccess 50 renderedIsParseable
 
@@ -40,7 +43,7 @@ spec =
             let l = last $ lines s
              in l == "definition of \"" ++ key ++ "\" is recursive"
 
-      let wrap = unlines . map (++ ";\n")
+      let wrap = T.unlines . map (<> ";\n")
 
       -- obvious
       let program1 = wrap ["root = a + b + root"]

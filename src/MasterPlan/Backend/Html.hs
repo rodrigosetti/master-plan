@@ -1,6 +1,6 @@
 {-|
-Module      : MasterPlan.Backend.Text
-Description : a backend that renders to a UI text
+Module      : MasterPlan.Backend.Html
+Description : a backend that renders to a UI HTML
 Copyright   : (c) Rodrigo Setti, 2017
 License     : MIT
 Maintainer  : rodrigosetti@gmail.com
@@ -9,7 +9,7 @@ Portability : POSIX
 -}
 {-# LANGUAGE UnicodeSyntax #-}
 {-# LANGUAGE OverloadedStrings #-}
-module MasterPlan.Backend.Text (render) where
+module MasterPlan.Backend.Html (render) where
 
 import           MasterPlan.Data
 import qualified Data.Text          as T

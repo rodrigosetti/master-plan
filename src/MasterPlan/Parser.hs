@@ -9,21 +9,23 @@ Portability : POSIX
 -}
 {-# LANGUAGE UnicodeSyntax #-}
 {-# LANGUAGE OverloadedLists #-}
+{-# LANGUAGE OverloadedStrings #-}
 module MasterPlan.Parser (runParser) where
 
 import           Control.Monad.State
+import           Data.Generics
+import           Data.List                  (nub)
 import qualified Data.List.NonEmpty         as NE
 import qualified Data.Map                   as M
+import qualified Data.Text                  as T
 import           Data.Void
 import           MasterPlan.Data
 import           Text.Megaparsec            hiding (State, runParser)
 import           Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
 import           Text.Megaparsec.Expr
-import Data.List (nub)
-import Data.Generics
 
-type Parser = ParsecT Void String (State ProjectSystem)
+type Parser = ParsecT Void T.Text (State ProjectSystem)
 
 -- |Space consumer
 sc ∷ Parser ()
@@ -35,7 +37,7 @@ sc = L.space space1 lineCmnt blockCmnt
 lexeme ∷ Parser a → Parser a
 lexeme = L.lexeme sc
 
-symbol ∷ String → Parser String
+symbol ∷ T.Text → Parser T.Text
 symbol = L.symbol sc
 
 -- | 'parens' parses something between parenthesis.
@@ -113,7 +115,7 @@ definition =
 
     property ∷ ProjProperty → Parser a → (String -> a -> Maybe ProjectBinding -> Parser ProjectBinding) -> Parser ()
     property prop valueParser setter =
-       do void $ symbol $ show prop
+       do void $ symbol $ T.pack $ show prop
           projName <- parens identifier
           mBinding <- lift $ M.lookup projName <$> gets bindings
           value <- symbol "=" *> valueParser
@@ -151,7 +153,7 @@ projectSystem =
    definitionSeq = void $ endBy1 definition (symbol ";")
 
 
-runParser :: String -> String -> Either String ProjectSystem
+runParser :: FilePath -> T.Text -> Either String ProjectSystem
 runParser filename contents = let mr = runParserT projectSystem filename contents
                                   initialPS = ProjectSystem M.empty
                               in case evalState mr initialPS of

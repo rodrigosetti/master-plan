@@ -25,6 +25,7 @@ executable master-plan
                      , containers
                      , master-plan
                      , optparse-applicative
+                     , text
 
 library
     hs-source-dirs:      src
@@ -35,11 +36,13 @@ library
                        , containers
                        , megaparsec
                        , mtl
+                       , text
                        , syb
     exposed-modules:     MasterPlan.Data
                        , MasterPlan.Parser
-                       , MasterPlan.Backend.Identity
                        , MasterPlan.Backend.Graph
+                       , MasterPlan.Backend.Html
+                       , MasterPlan.Backend.Identity
                        , MasterPlan.Backend.Text
 
 test-suite spec
@@ -57,6 +60,7 @@ test-suite spec
                   , quickcheck-instances
                   , random
                   , random-shuffle
+                  , text
   other-modules:    MasterPlan.DataSpec
                   , MasterPlan.Arbitrary
                   , MasterPlan.ParserSpec
