@@ -81,7 +81,7 @@ spec = do
               (counterexample "disagree on cost"  $ cost'  `eq` cost  sys p) .&&.
               (counterexample "disagree on trust" $ trust' `eq` trust sys p)
              where
-               p = RefProj rootKey
+               p = RefProj "root"
                (trust', cost') = evalState (monteCarloTrustAndCost 50000 sys p) g
 
         property monteCarloAndAnalyticalAgree
@@ -103,7 +103,7 @@ spec = do
       let propSimplifyIsStable :: ProjectSystem -> Property
           propSimplifyIsStable sys =
             let sys' = simplify sys
-                p    = RefProj rootKey
+                p    = RefProj "root"
              in cost sys p `eq` cost sys' p .&&. trust sys p `eq` trust sys' p
 
       property propSimplifyIsStable

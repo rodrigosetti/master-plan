@@ -1,7 +1,16 @@
 name:                master-plan
 version:             0.1.0.0
 synopsis:            The project management tool for hackers
--- description:
+description:         Master Plan is a tool that parses files that describes
+                     projects using a simple and powerful syntax in which
+                     project structures are encoded using a special algebra
+                     with combinators for specifying the different kinds
+                     of dependencies. It also supports estimations of cost and
+                     risk, as well as some metadata. The tool is then able
+                     to compute the priority of execution that minimizes costs,
+                     and also output a nice visual representation of the structure.
+                     Becase the plan description is plan text, it's portable
+                     and fits well within source control.
 homepage:            https://github.com/rodrigosetti/master-plan
 bug-reports:         https://github.com/rodrigosetti/master-plan/issues
 author:              Rodrigo Setti
@@ -14,6 +23,10 @@ category:            Tools
 build-type:          Simple
 cabal-version:       >=1.10
 extra-source-files:  README.md
+
+source-repository head
+  type:     git
+  location: git://github.com/rodrigosetti/master-plan.git
 
 executable master-plan
   hs-source-dirs:      app
@@ -34,6 +47,9 @@ library
     default-extensions:  UnicodeSyntax
     build-depends:       base
                        , containers
+                       , diagrams
+                       , diagrams-lib
+                       , diagrams-rasterific
                        , megaparsec
                        , mtl
                        , text
@@ -41,9 +57,7 @@ library
     exposed-modules:     MasterPlan.Data
                        , MasterPlan.Parser
                        , MasterPlan.Backend.Graph
-                       , MasterPlan.Backend.Html
                        , MasterPlan.Backend.Identity
-                       , MasterPlan.Backend.Text
 
 test-suite spec
   type:             exitcode-stdio-1.0

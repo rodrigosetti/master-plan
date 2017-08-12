@@ -27,7 +27,7 @@ instance Arbitrary ProjectSystem where
 
   arbitrary = do bs <- replicateM (length testingKeys) arbitrary
                  rootB <- ExpressionProj <$> arbitrary <*> arbitrary
-                 pure $ ProjectSystem $ M.insert rootKey rootB $ M.fromList $ zip testingKeys bs
+                 pure $ ProjectSystem $ M.insert "root" rootB $ M.fromList $ zip testingKeys bs
 
   shrink (ProjectSystem bs) =
       map ProjectSystem $ concatMap shrinkOne testingKeys

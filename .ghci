@@ -1,1 +1,2 @@
+:set prompt "%s\n>"
 :set -XUnicodeSyntax

@@ -146,9 +146,7 @@ dependencies sys = everything (++) ([] `mkQ` collectDep)
 projectSystem :: Parser ProjectSystem
 projectSystem =
     do between sc eof definitionSeq
-       ps <- lift get
-       unless (M.member rootKey $ bindings ps) $ fail $ "expected project \"" ++ rootKey ++ "\" to be defined."
-       pure ps
+       lift get
  where
    definitionSeq = void $ endBy1 definition (symbol ";")
 

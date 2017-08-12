@@ -1,0 +1,52 @@
+
+title(root) = "business";
+description(root) = "can we run a successful business";
+owner(root) = "CEO";
+
+root = x + p;
+
+// -------
+
+title(x) = "build technology";
+description(x) = "can we build the technology ourselves";
+
+x = h * b;
+
+title(h) = "hire";
+description(h) = "can we attract and retain talent";
+cost(h) = 20;
+owner(h) = "HR";
+
+title(b) = "build";
+description(b) = "our technology can be built and scale";
+
+b = phase1 -> phase2 -> phase3;
+
+title(phase1) = "validate prototype";
+trust(phase1) = 70%;
+progress(phase1) = 100%;
+owner(phase1) = "engineering";
+
+title(phase2) = "launch in small market";
+trust(phase2) = 50%;
+progress(phase2) = 32%;
+owner(phase2) = "engineering";
+
+title(phase3) = "scale nationwide";
+trust(phase3) = 20%;
+owner(phase3) = "engineering";
+
+// ------
+
+title(p) = "tech partner";
+description(p) = "secure a tech partnership";
+
+p = sa + sb;
+
+title(sa) = "supplier A"; trust(sa) = 90%; cost(sa) = 10;
+url(sa) = "www.supplier.a.com";
+owner(sa) = "partnerships";
+
+title(sb) = "supplier B"; trust(sb) = 60%; cost(sb) = 5;
+url(sb) = "www.supplier.b.com";
+owner(sb) = "partnerships";

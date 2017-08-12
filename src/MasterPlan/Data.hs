@@ -19,8 +19,10 @@ module MasterPlan.Data ( Project(..)
                        , Trust
                        , Cost
                        , Progress
-                       , rootKey
                        , defaultProjectProps
+                       , defaultCost
+                       , defaultTrust
+                       , defaultProgress
                        , defaultTaskProj
                        , cost
                        , progress
@@ -35,7 +37,7 @@ import           Control.Monad.Writer
 import           Data.Generics
 import           Data.List.NonEmpty   (NonEmpty ((:|)))
 import qualified Data.List.NonEmpty   as NE
-import qualified Data.Map             as M
+import qualified Data.Map             as M (Map, lookup)
 import           Data.Semigroup       (sconcat)
 
 -- * Types
@@ -84,17 +86,23 @@ instance Show ProjProperty where
 newtype ProjectSystem = ProjectSystem { bindings :: M.Map ProjectKey ProjectBinding }
                           deriving (Eq, Show, Data, Typeable)
 
-rootKey ∷ ProjectKey
-rootKey = "root"
-
 defaultProjectProps ∷ ProjectProperties
-defaultProjectProps = ProjectProperties { title = rootKey
+defaultProjectProps = ProjectProperties { title = "?"
                                         , description = Nothing
                                         , url = Nothing
                                         , owner = Nothing }
 
+defaultCost :: Cost
+defaultCost = 0
+
+defaultTrust :: Trust
+defaultTrust = 1
+
+defaultProgress :: Progress
+defaultProgress = 0
+
 defaultTaskProj ∷ ProjectProperties → ProjectBinding
-defaultTaskProj pr = TaskProj pr 0 1 0
+defaultTaskProj pr = TaskProj pr defaultCost defaultTrust defaultProgress
 
 -- | Expected cost
 cost ∷ ProjectSystem → Project → Cost
@@ -102,8 +110,8 @@ cost sys (RefProj n) =
   case M.lookup n (bindings sys) of
     Just (TaskProj _ c _ p)     -> c * (1-p) -- cost is weighted by remaining progress
     Just (ExpressionProj _ p)   -> cost sys p -- TODO: avoid cyclic
-    Just (UnconsolidatedProj _) -> 0 -- default
-    Nothing                     -> 0 -- should not happen
+    Just (UnconsolidatedProj _) -> defaultCost -- default
+    Nothing                     -> error $ "project \"" ++ n ++ "\" is undefined" -- should not happen
 cost sys (SequenceProj ps) = costConjunction sys ps
 cost sys (ProductProj ps) = costConjunction sys ps
 cost sys (SumProj ps) =
@@ -125,8 +133,8 @@ trust sys (RefProj n) =
   case M.lookup n (bindings sys) of
     Just (TaskProj _ _ t p)     -> p + t * (1-p)
     Just (ExpressionProj _ p)   -> trust sys p -- TODO: avoid cyclic
-    Just (UnconsolidatedProj _) -> 1 -- default
-    Nothing                     -> 0 -- should not happen
+    Just (UnconsolidatedProj _) -> defaultTrust -- default
+    Nothing                     -> error $ "project \"" ++ n ++ "\" is undefined" -- should not happen
 trust sys (SequenceProj ps) = trustConjunction sys ps
 trust sys (ProductProj ps) = trustConjunction sys ps
 trust sys (SumProj ps) =
@@ -140,8 +148,8 @@ progress sys (RefProj n) =
   case M.lookup n (bindings sys) of
     Just (TaskProj _ _ _ p)     -> p
     Just (ExpressionProj _ p)   -> progress sys p -- TODO: avoid cyclic
-    Just (UnconsolidatedProj _) -> 0 -- default
-    Nothing                     -> 0 -- should not happen
+    Just (UnconsolidatedProj _) -> defaultProgress -- default
+    Nothing                     -> error $ "project \"" ++ n ++ "\" is undefined" -- should not happen
 progress sys (SequenceProj ps)   = progressConjunction sys ps
 progress sys (ProductProj ps)    = progressConjunction sys ps
 progress sys (SumProj ps)        = maximum $ NE.map (progress sys) ps
