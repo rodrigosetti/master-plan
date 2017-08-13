@@ -12,11 +12,12 @@ import           System.Random
 import           System.Random.Shuffle (shuffle')
 import           Test.Hspec
 import           Test.QuickCheck       hiding (sample)
+import           Test.Hspec.QuickCheck (prop)
 
-average ∷ RandomGen g ⇒ State g Float → Int → State g Float
-average sample n = do tot <- replicateM n sample
-                      pure $ sum tot / fromIntegral n
-
+-- |Sample the simulation model of the execution of a project.
+-- It's a stateful computation with the random generator, which computes
+-- a 2-tuple with a Boolean: whether the execution was successful (A Bernoulli
+-- sample from trust), and the total actual cost incurred.
 simulate ∷ RandomGen g ⇒ ProjectSystem → ProjectExpr → State g (Bool, Cost)
 simulate sys (Reference n) =
    case M.lookup n (bindings sys) of
@@ -26,9 +27,9 @@ simulate sys (Reference n) =
               effectiveTrust = p + t * remainingProgress
               effectiveCost = c * remainingProgress
           pure (effectiveTrust > r, effectiveCost)
-     Just (BindingExpr _ p)           -> simulate sys p -- TODO: avoid cyclic
-     Just (BindingPlaceholder _)         -> pure (True, 0)
-     Nothing                             -> pure (False, 0) -- should not happen
+     Just (BindingExpr _ p)       -> simulate sys p -- TODO: avoid cyclic
+     Just (BindingPlaceholder _)  -> pure (True, 0)
+     Nothing                      -> pure (False, 0) -- should not happen
 
 simulate sys (Sequence ps)   = simulateConjunction sys $ NE.toList ps
 simulate sys (Product ps)    = simulateConjunction sys $ NE.toList ps
@@ -44,6 +45,9 @@ simulate sys (Sum ps)        =
                              do (success', c') <- simulate' rest
                                 pure (success', c + c')
 
+-- |Helper function that samples from a sequence of projects to be executed in
+-- order, and which all must be successful for the end result to be succesful.
+-- This is the case for sequences, and products (in a particular permutation).
 simulateConjunction ∷ RandomGen g ⇒ ProjectSystem → [ProjectExpr] → State g (Bool, Cost)
 simulateConjunction _ []       = pure (True, 0)
 simulateConjunction sys (p:rest) = do (success, c) <- simulate sys p
@@ -53,12 +57,14 @@ simulateConjunction sys (p:rest) = do (success, c) <- simulate sys p
                                       else
                                         pure (False, c)
 
+-- |Compute a project's trust and cost via a Monte Carlo method of computing
+-- the average of a handful of samples.
 monteCarloTrustAndCost ∷ RandomGen g ⇒ Int → ProjectSystem → ProjectExpr → State g (Trust, Cost)
 monteCarloTrustAndCost n sys p = do results <- replicateM n $ simulate sys p
                                     let trusts = map (bool 0 1 . fst) results
-                                    let costs = map snd results
+                                        costs  = map snd results
                                     pure (sum trusts / fromIntegral n,
-                                         sum costs / fromIntegral n)
+                                          sum costs / fromIntegral n)
 
 aproximatelyEqual ∷ Float -> Float -> Float → Float -> Property
 aproximatelyEqual alpha beta x y =
@@ -75,38 +81,36 @@ spec = do
 
     let eq = aproximatelyEqual 0.05 0.05
 
-    it "monte-carlo and analytical implementations should agree" $ do
-        let monteCarloAndAnalyticalAgree ∷ ProjectSystem → Property
-            monteCarloAndAnalyticalAgree sys =
-              (counterexample "disagree on cost"  $ cost'  `eq` cost  sys p) .&&.
-              (counterexample "disagree on trust" $ trust' `eq` trust sys p)
-             where
-               p = Reference "root"
-               (trust', cost') = evalState (monteCarloTrustAndCost 50000 sys p) g
-
-        property monteCarloAndAnalyticalAgree
+    prop "monte-carlo and analytical implementations should agree" $ do
+        let p = Reference "root"
+            monteCarloAndAnalyticalMustAgree ∷ ProjectSystem -> Property
+            monteCarloAndAnalyticalMustAgree sys =
+                counterexample "disagree on cost"  (cost'  `eq` cost  sys p) .&&.
+                counterexample "disagree on trust" (trust' `eq` trust sys p)
+              where
+                (trust', cost') = evalState (monteCarloTrustAndCost 50000 sys p) g
+        monteCarloAndAnalyticalMustAgree
 
   describe "simplification" $ do
 
     let eq = aproximatelyEqual 0.005 0.005
 
-    it "is irreductible" $ do
-      let simplificationIsIrreductible :: ProjectExpr -> Property
-          simplificationIsIrreductible p =
-            let p' = simplifyProj p
-                p'' = simplifyProj p'
-             in p /= p' ==> p' == p''
+    prop "is irreductible" $ do
+        let simplificationIsIrreductible :: ProjectExpr -> Property
+            simplificationIsIrreductible p =
+                let p' = simplifyProj p
+                    p'' = simplifyProj p'
+                 in p /= p' ==> p' == p''
+        simplificationIsIrreductible
 
-      property simplificationIsIrreductible
-
-    it "is stable" $ do
-      let propSimplifyIsStable :: ProjectSystem -> Property
-          propSimplifyIsStable sys =
+    prop "is stable" $ do
+      let simplifyIsStable :: ProjectSystem -> Property
+          simplifyIsStable sys =
             let sys' = simplify sys
                 p    = Reference "root"
              in cost sys p `eq` cost sys' p .&&. trust sys p `eq` trust sys' p
 
-      property propSimplifyIsStable
+      simplifyIsStable
 
   describe "optimization" $ do
 
@@ -120,7 +124,7 @@ spec = do
         shuffleProj (Product ps)  = Product <$> shuffleProjs ps
         shuffleProj p                 = pure p
 
-    it "minimize cost and keep trust stable" $ do
+    prop "minimize cost and keep trust stable" $ do
       -- This test verifies that for any arbitrary project tree, the
       -- prioritized version of it will have the minimum cost.
 
@@ -138,4 +142,4 @@ spec = do
             in ioProperty $ do variations <- replicateM 10 (shuffleProj p)
                                return $ conjoin (map costIsLessOrEqual variations) .&.
                                         conjoin (map trustIsSame variations)
-      property prioritizeMinimizesCost
+      prioritizeMinimizesCost

@@ -10,6 +10,7 @@ import           MasterPlan.Backend.Identity (render)
 import           MasterPlan.Data
 import           MasterPlan.Parser           (runParser)
 import           Test.Hspec
+import           Test.Hspec.QuickCheck       (prop)
 import           Test.QuickCheck
 
 spec ∷ Spec
@@ -18,15 +19,15 @@ spec =
 
     let allProps = [minBound :: ProjProperty ..]
 
-    it "rendered should be parseable" $ do
+    prop "rendered should be parseable" $ do
       let renderedIsParseable ∷ ProjectSystem → Property
           renderedIsParseable sys =
             let rendered = render sys allProps
              in counterexample (T.unpack rendered) $ isRight (runParser "test1" rendered)
 
-      property $ withMaxSuccess 50 renderedIsParseable
+      withMaxSuccess 50 renderedIsParseable
 
-    it "identity backend output should parse into the same input" $ do
+    prop "identity backend output should parse into the same input" $ do
 
       let propertyParseAndOutputIdentity ∷ ProjectSystem → Property
           propertyParseAndOutputIdentity sys =
@@ -34,7 +35,7 @@ spec =
                 parsed = runParser "test2" (render sys' allProps)
              in isRight parsed ==> parsed === Right sys'
 
-      property $ withMaxSuccess 50 propertyParseAndOutputIdentity
+      withMaxSuccess 50 propertyParseAndOutputIdentity
 
     it "should reject recursive equations" $ do
 
