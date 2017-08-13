@@ -1,4 +1,8 @@
-
+/**
+ * This project is a business plan, which vision is state in
+ * the "root" project - which is run a successful tech-based
+ * business in a certain market.
+ */
 title(root) = "business";
 description(root) = "can we run a successful business";
 owner(root) = "CEO";
@@ -36,7 +40,8 @@ title(phase3) = "scale nationwide";
 trust(phase3) = 20%;
 owner(phase3) = "engineering";
 
-// ------
+// Another way to get technology is to parner,
+// instead of building it:
 
 title(p) = "tech partner";
 description(p) = "secure a tech partnership";
@@ -51,6 +56,9 @@ title(sb) = "supplier B"; trust(sb) = 60%; cost(sb) = 5;
 url(sb) = "www.supplier.b.com";
 owner(sb) = "partnerships";
 
-// ----
+/*
+ * Approval process is a sub-project we have to go once
+ * regardless of which partnership, will "open the way"
+ */
 approvalProcess = legal -> budget -> executive;
 title(approvalProcess) = "approval process";
