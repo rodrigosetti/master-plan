@@ -41,7 +41,7 @@ owner(phase3) = "engineering";
 title(p) = "tech partner";
 description(p) = "secure a tech partnership";
 
-p = sa + sb;
+p = (approvalProcess -> sa) + (approvalProcess -> sb);
 
 title(sa) = "supplier A"; trust(sa) = 90%; cost(sa) = 10;
 url(sa) = "www.supplier.a.com";
@@ -50,3 +50,7 @@ owner(sa) = "partnerships";
 title(sb) = "supplier B"; trust(sb) = 60%; cost(sb) = 5;
 url(sb) = "www.supplier.b.com";
 owner(sb) = "partnerships";
+
+// ----
+approvalProcess = legal -> budget -> executive;
+title(approvalProcess) = "approval process";

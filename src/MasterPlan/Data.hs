@@ -24,6 +24,7 @@ module MasterPlan.Data ( Project(..)
                        , defaultTrust
                        , defaultProgress
                        , defaultTaskProj
+                       , bindingTitle
                        , cost
                        , progress
                        , trust
@@ -103,6 +104,11 @@ defaultProgress = 0
 
 defaultTaskProj ∷ ProjectProperties → ProjectBinding
 defaultTaskProj pr = TaskProj pr defaultCost defaultTrust defaultProgress
+
+bindingTitle :: ProjectBinding -> String
+bindingTitle (TaskProj ProjectProperties { title=t} _ _ _)     = t
+bindingTitle (ExpressionProj ProjectProperties { title=t} _)   = t
+bindingTitle (UnconsolidatedProj ProjectProperties { title=t}) = t
 
 -- | Expected cost
 cost ∷ ProjectSystem → Project → Cost

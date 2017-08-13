@@ -17,12 +17,13 @@ module MasterPlan.Backend.Graph (render, RenderOptions(..)) where
 import           MasterPlan.Data
 import           Diagrams.Prelude hiding (render)
 import           Diagrams.Backend.Rasterific
-import qualified Data.Map as M
-import qualified Data.List.NonEmpty as NE
-import           Data.Maybe (fromMaybe, catMaybes)
-import           Text.Printf (printf)
-import Data.List (intersperse)
+import           Data.List (intersperse)
 import           Control.Applicative ((<|>))
+import           Control.Monad.State
+import qualified Data.Map as M
+import           Data.Maybe (fromMaybe, catMaybes)
+import qualified Data.List.NonEmpty as NE
+import           Text.Printf (printf)
 --import Diagrams.TwoD.Text (Text)
 
 -- text :: (TypeableFloat n, Renderable (Text n) b) => String -> QDiagram b V2 n Any
@@ -46,34 +47,45 @@ data Node = Node (Maybe ProjectKey)
 type RenderModel = Tree NodeType Node
 
 -- |Translates a ProjectSystem into a Tree Node
-toRenderModel :: ProjectSystem -> ProjectKey -> Maybe RenderModel
-toRenderModel sys rootK = bindingToRM rootK <$> M.lookup rootK (bindings sys)
+toRenderModel :: ProjectSystem -> ProjectKey -> State [ProjectKey] (Maybe RenderModel)
+toRenderModel sys rootK = case M.lookup rootK (bindings sys) of
+                            Nothing -> pure Nothing
+                            Just b -> Just <$> bindingToRM rootK b
   where
-    bindingToRM :: ProjectKey -> ProjectBinding -> RenderModel
+    bindingToRM :: ProjectKey -> ProjectBinding -> State [ProjectKey] RenderModel
     bindingToRM key (ExpressionProj prop p) = projToRM p (Just key) (Just prop)
-    bindingToRM key (TaskProj prop c t p) = Leaf $ Node (Just key)
-                                                        (Just prop)
-                                                        c t p
-    bindingToRM key (UnconsolidatedProj prop) = Leaf $ Node (Just key)
-                                                            (Just prop)
-                                                            defaultCost
-                                                            defaultTrust
-                                                            defaultProgress
-    mkNode :: (Node -> NE.NonEmpty RenderModel -> RenderModel) -> Project -> NE.NonEmpty Project -> Maybe ProjectKey -> Maybe ProjectProperties -> RenderModel
+    bindingToRM key (TaskProj prop c t p) = pure $ Leaf $ Node (Just key)
+                                                               (Just prop)
+                                                               c t p
+    bindingToRM key (UnconsolidatedProj prop) = pure $ Leaf $ Node (Just key)
+                                                                   (Just prop)
+                                                                   defaultCost
+                                                                   defaultTrust
+                                                                   defaultProgress
+
+    mkNode :: (Node -> NE.NonEmpty RenderModel -> RenderModel)
+           -> Project
+           -> NE.NonEmpty Project
+           -> Maybe ProjectKey
+           -> Maybe ProjectProperties
+           -> State [ProjectKey] RenderModel
     mkNode f p ps key prop = f (Node key prop
                                      (cost sys p)
                                      (trust sys p)
                                      (progress sys p))
-                               $ NE.map (\p' -> projToRM p' Nothing Nothing ) ps
+                               <$> mapM (\p' -> projToRM p' Nothing Nothing) ps
 
-    projToRM :: Project -> Maybe ProjectKey -> Maybe ProjectProperties -> RenderModel
+    projToRM :: Project -> Maybe ProjectKey -> Maybe ProjectProperties -> State [ProjectKey] RenderModel
     projToRM p@(SumProj ps) = mkNode (Tree SumNode) p ps
     projToRM p@(SequenceProj ps) = mkNode (Tree SequenceNode) p ps
     projToRM p@(ProductProj ps) = mkNode (Tree ProductNode) p ps
-    projToRM (RefProj n) = -- TODO: avoid repeating
+    projToRM (RefProj n) =
       \k p -> case M.lookup n $ bindings sys of
-          Nothing -> Leaf $ Node k (p <|> pure defaultProjectProps {title=n}) defaultCost defaultTrust defaultProgress
-          Just b -> bindingToRM n b
+                Nothing -> pure $ Leaf $ Node k (p <|> pure defaultProjectProps {title=n}) defaultCost defaultTrust defaultProgress
+                Just b -> do alreadyProcessed <- gets (n `elem`)
+                             if alreadyProcessed
+                               then pure $ Leaf $ NodeRef $ bindingTitle b
+                               else modify (n:) >> bindingToRM n b
 
 -- |how many children
 treeSize :: Num a => Tree t n -> a
@@ -92,7 +104,7 @@ render ∷ FilePath -> RenderOptions-> ProjectSystem → IO ()
 render fp (RenderOptions colorByP w h rootK props) sys =
   let noRootEroor = text $ "no project named \"" ++ rootK ++ "\" found."
       dia :: QDiagram B V2 Double Any
-      dia = fromMaybe noRootEroor $ renderTree colorByP props <$> toRenderModel sys rootK
+      dia = fromMaybe noRootEroor $ renderTree colorByP props <$> evalState (toRenderModel sys rootK) []
   in renderRasterific fp (dims $ V2 (fromInteger w) (fromInteger h)) $ pad 1.05 $ centerXY dia
 
 renderTree :: Bool -> [ProjProperty] -> RenderModel -> QDiagram B V2 Double Any
@@ -120,8 +132,9 @@ renderTree colorByP props t@(Tree ty n ts) =
                     SequenceNode -> text ">" <> circle 1 # fc white # lwO 1
 
 renderNode :: Bool -> [ProjProperty] -> Node -> QDiagram B V2 Double Any
-renderNode _        _     (NodeRef n) = pad 1.1 $ roundedRect 30 2 0.5 <> text n
-renderNode colorByP props (Node key prop c t p) =
+renderNode _        _     (NodeRef n) =
+   text n <> roundedRect 30 12 0.5 # lwO 2 # fc white # dashingN [0.005, 0.005] 0 
+renderNode colorByP props (Node _   prop c t p) =
    centerY nodeDia # withEnvelope (rect 30 12 :: D V2 Double)
   where
     nodeDia =
