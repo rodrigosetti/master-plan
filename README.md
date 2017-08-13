@@ -5,12 +5,15 @@ algebra of projects.
 
 These are the values propositions of master plan:
 
- * Simplicity: keep project management into a single text file.
- * Agility: embrace change, by allowing projects to specify uncertainty and allow
+ * **Simplicity**: keep project management into a single text file. Under version control,
+   close to your code.
+ * **Agility**: embrace change, by allowing projects to specify uncertainty and allow
    for refinement anytime.
- * Freedom: master plan is a open specification, not dependent on tools or hosting.
+ * **Freedom**: master plan is a open specification, not dependent on tools or hosting.
    There is this current open-source implementation, but anyone can implement
    tools or visualizations on top of it.
+   
+See the [wiki](https://github.com/rodrigosetti/master-plan/wiki) for details and examples.
 
 ## Algebra of Projects
 
@@ -29,11 +32,11 @@ things depending on the domain, but most usually it's time.
 Given all these constraints and structure, master plan will build an optimum
 prioritization of projects and sub-projects for execution.
 
-The entire definition of a project is defined into a single `plan.txt` file
-using a simple language. There are defaults for most constrains and properties
+The entire definition of a project is defined into a single `.plan` file
+using a simple C-like language. There are defaults for most constrains and properties
 such that things can be less verbose if using the defaults.
 
-The tool is able to build visualizations and reports from the plan file.
+The tool is able to build visualizations from the plan file.
 
 Ideally, the plan file should be kept in version control so that execution and
 planning progress can be recorded.
@@ -66,7 +69,7 @@ Available options:
 ### Syntax
 
 Comments are C-style: multiline in between `/*` and `*/`, and single line starts
-with `//`, extending to the end of line. Every definition must end with semicolon.
+with `//`, extending to the end of line. Every definition must end with semicolon (`;`).
 
 Everything else are definitions, in the form `lrs = rhs`.
 There are two kinds of definitions with respect to `lrs` (left hand side):
