@@ -1,5 +1,7 @@
 # master-plan
 
+[![Build Status](https://travis-ci.org/rodrigosetti/master-plan.svg?branch=master)](https://travis-ci.org/rodrigosetti/master-plan)
+
 Master Plan is a text based project management tool that implements an
 algebra of projects.
 
