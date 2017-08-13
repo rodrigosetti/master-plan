@@ -28,8 +28,8 @@ simulate sys (Reference n) =
               effectiveCost = c * remainingProgress
           pure (effectiveTrust > r, effectiveCost)
      Just (BindingExpr _ p)       -> simulate sys p -- TODO: avoid cyclic
-     Just (BindingPlaceholder _)  -> pure (True, 0)
-     Nothing                      -> pure (False, 0) -- should not happen
+     Just (BindingPlaceholder _)  -> pure (True, defaultCost)
+     Nothing                      -> pure (True, defaultCost)
 
 simulate sys (Sequence ps)   = simulateConjunction sys $ NE.toList ps
 simulate sys (Product ps)    = simulateConjunction sys $ NE.toList ps
@@ -112,7 +112,7 @@ spec = do
 
       simplifyIsStable
 
-  describe "optimization" $ do
+  describe "prioritization" $ do
 
     let shuffleProjs :: NE.NonEmpty ProjectExpr -> IO (NE.NonEmpty ProjectExpr)
         shuffleProjs ps = do ps' <- NE.toList <$> mapM shuffleProj ps
@@ -137,8 +137,8 @@ spec = do
                 ocost = cost sys op
                 otrust = trust sys op
                 costIsLessOrEqual p' =
-                  counterexample "cost is >" $ ocost <= c .||. ocost `eq` c where c = cost sys p'
-                trustIsSame p' = otrust `eq` t where t = trust sys p'
+                  counterexample ("variation has smaller cost: " ++ show p') $ ocost <= cost sys p'
+                trustIsSame p' = otrust `eq` trust sys p'
             in ioProperty $ do variations <- replicateM 10 (shuffleProj p)
                                return $ conjoin (map costIsLessOrEqual variations) .&.
                                         conjoin (map trustIsSame variations)

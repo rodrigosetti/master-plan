@@ -188,15 +188,20 @@ simplifyProj (Sequence ps) =
     reduce p              = [simplifyProj p]
 simplifyProj p@Reference {}     = p
 
+-- |Sort projects in the system order that minimizes cost
 prioritizeSys ∷ ProjectSystem → ProjectSystem
 prioritizeSys sys = everywhere (mkT $ prioritizeProj sys) sys
 
--- Sort project in order that minimizes cost
+-- |Sort project in order that minimizes cost
 prioritizeProj ∷ ProjectSystem → ProjectExpr → ProjectExpr
 prioritizeProj sys (Sum ps)      =
   let f p = cost sys p / trust sys p
-  in Sum $ NE.sortWith f $ prioritizeProj sys <$> ps
+  in Sum $ NE.sortWith (nanToInf . f) $ prioritizeProj sys <$> ps
 prioritizeProj sys (Product ps)  =
   let f p = cost sys p / (1 - trust sys p)
-  in Product $ NE.sortWith f $ prioritizeProj sys <$> ps
+  in Product $ NE.sortWith (nanToInf . f) $ prioritizeProj sys <$> ps
 prioritizeProj _   p                 = p
+
+-- |Helper function to transform any Nan (not a number) to positive infinity
+nanToInf :: RealFloat a => a -> a
+nanToInf x = if isNaN x then 1/0 else x

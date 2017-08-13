@@ -17,6 +17,7 @@ import           Text.Printf     (printf)
 
 -- * Debugging
 
+-- |Print a ProjectSystem to standard output
 debugSys ∷ ProjectSystem → IO ()
 debugSys sys@(ProjectSystem bs) = void $ M.traverseWithKey printBinding bs
   where
@@ -27,6 +28,8 @@ debugSys sys@(ProjectSystem bs) = void $ M.traverseWithKey printBinding bs
                               BindingAtomic _ c t p -> putStrLn $ printf "(c:%.2f,t:%.2f,p:%2.f)" c t p
                               BindingPlaceholder _ -> putStrLn "?"
 
+-- |Print a Project Expression in a Project System to standard output.
+-- The expression is printed in a tree like fashion.
 debugProj ∷ ProjectSystem → ProjectExpr → IO ()
 debugProj sys = print' 0
    where
@@ -34,9 +37,9 @@ debugProj sys = print' 0
      ident il = replicateM_ il $ putStr " |"
 
      print' ∷ Int → ProjectExpr → IO ()
-     print' il p@(Reference n)  = ident il >> putStr ("-" ++ n) >> ctp p
-     print' il p@(Sum ps) = ident il >> putStr "-+ " >> ctp p >> forM_ ps (print' $ il+1)
-     print' il p@(Sequence ps) = ident il >> putStr "-> " >> ctp p >> forM_ ps (print' $ il+1)
-     print' il p@(Product ps) = ident il >> putStr "-* " >> ctp p >> forM_ ps (print' $ il+1)
+     print' il p@(Reference n)  = ident il >> putStr ("-" ++ n ++ "   ") >> ctp p
+     print' il p@(Sum ps) = ident il >> putStr "-+   " >> ctp p >> forM_ ps (print' $ il+1)
+     print' il p@(Sequence ps) = ident il >> putStr "->   " >> ctp p >> forM_ ps (print' $ il+1)
+     print' il p@(Product ps) = ident il >> putStr "-*   " >> ctp p >> forM_ ps (print' $ il+1)
 
-     ctp p = putStrLn $ printf "(c:%.2f,t:%.2f,p:%2.f)" (cost sys p) (trust sys p) (progress sys p)
+     ctp p = putStrLn $ printf " c=%.2f  t=%.2f  p=%.2f" (cost sys p) (trust sys p) (progress sys p)
