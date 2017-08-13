@@ -43,21 +43,23 @@ planning progress can be recorded.
 ```
 master-plan - project management tool for hackers
 
-Usage: master-plan [-i|--input FILENAME] [-o|--output FILENAME]
-                   [--progress-below N]
-                   [--hide title|description|url|owner|cost|trust|progress]
-                   [-p|--prioritize] (-m|--mode identity|text|graph|html)
+Usage: master-plan  [FILENAME] [-o|--output FILENAME] [--progress-below N]
+                    [-c|--color] [-w|--width NUMBER] [--height NUMBER]
+                    [-r|--root NAME]
+                    [--hide title|description|url|owner|cost|trust|progress]
   See documentation on how to write project plan files
 
 Available options:
-  -i,--input FILENAME      plan file to read from (default: "master.plan")
-  -o,--output FILENAME     output file name
+  FILENAME                 plan file to read from (default from stdin)
+  -o,--output FILENAME     output file name (.png, .tif, .bmp, .jpg and .pdf
+                           supported)
   --progress-below N       only display projects which progress is < N%
+  -c,--color               color each project by progress
+  -w,--width NUMBER        width of the output image
+  --height NUMBER          height of the output image
+  -r,--root NAME           name of the root project definition (default: "root")
   --hide title|description|url|owner|cost|trust|progress
                            hide a particular property
-  -p,--prioritize          prioritize projects to minimize cost
-  -m,--mode identity|text|graph|html
-                           render mode
   -h,--help                Show this help text
 ```
 
