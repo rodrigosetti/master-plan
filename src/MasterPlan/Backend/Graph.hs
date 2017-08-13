@@ -22,6 +22,7 @@ import qualified Data.List.NonEmpty as NE
 import           Data.Maybe (fromMaybe, catMaybes)
 import           Text.Printf (printf)
 import Data.List (intersperse)
+import           Control.Applicative ((<|>))
 --import Diagrams.TwoD.Text (Text)
 
 -- text :: (TypeableFloat n, Renderable (Text n) b) => String -> QDiagram b V2 n Any
@@ -63,7 +64,7 @@ toRenderModel sys rootK = bindingToRM rootK <$> M.lookup rootK (bindings sys)
                                      (cost sys p)
                                      (trust sys p)
                                      (progress sys p))
-                               $ NE.map (\p' -> projToRM p' Nothing Nothing) ps
+                               $ NE.map (\p' -> projToRM p' Nothing Nothing ) ps
 
     projToRM :: Project -> Maybe ProjectKey -> Maybe ProjectProperties -> RenderModel
     projToRM p@(SumProj ps) = mkNode (Tree SumNode) p ps
@@ -71,7 +72,7 @@ toRenderModel sys rootK = bindingToRM rootK <$> M.lookup rootK (bindings sys)
     projToRM p@(ProductProj ps) = mkNode (Tree ProductNode) p ps
     projToRM (RefProj n) = -- TODO: avoid repeating
       \k p -> case M.lookup n $ bindings sys of
-          Nothing -> Leaf $ Node k p 1 1 0
+          Nothing -> Leaf $ Node k (p <|> pure defaultProjectProps {title=n}) defaultCost defaultTrust defaultProgress
           Just b -> bindingToRM n b
 
 -- |how many children
@@ -98,25 +99,25 @@ renderTree :: Bool -> [ProjProperty] -> RenderModel -> QDiagram B V2 Double Any
 renderTree colorByP props (Leaf n) = alignL $ renderNode colorByP props n
 renderTree colorByP props t@(Tree ty n ts) =
     (strut (V2 0 siz) <> alignL (centerY $ renderNode colorByP props n))
-    |||  (translateX 2 typeSymbol # withEnvelope (mempty :: D V2 Double) <> hrule 4)
+    |||  (translateX 2 typeSymbol # withEnvelope (mempty :: D V2 Double) <> hrule 4 # lwO 2)
     |||  centerY (headBar === treeBar (map ((* 6) . treeSize) ts'))
     |||  centerY (vcat $ map renderSubTree ts')
   where
     siz = 12 * treeSize t
-    renderSubTree subtree = hrule 4 ||| renderTree colorByP props subtree
+    renderSubTree subtree = hrule 4 # lwO 2 ||| renderTree colorByP props subtree
     ts' = NE.toList ts
 
     headBar = strut $ V2 0 $ treeSize (NE.head ts) * 6
 
     treeBar :: [Double] -> QDiagram B V2 Double Any
-    treeBar (s1:s2:ss) = vrule s1 === vrule s2 === treeBar (s2:ss)
+    treeBar (s1:s2:ss) = vrule s1 # lwO 2 === vrule s2 # lwO 2 === treeBar (s2:ss)
     treeBar [s1] = strut $ V2 0 s1
     treeBar _ = mempty
 
     typeSymbol = case ty of
-                    SumNode -> text "+" <> circle 1 # fc white # lw 1
-                    ProductNode -> text "x" <> circle 1 # fc white # lw 1
-                    SequenceNode -> text ">" <> circle 1 # fc white # lw 1
+                    SumNode -> text "+" <> circle 1 # fc white # lwO 1
+                    ProductNode -> text "x" <> circle 1 # fc white # lwO 1
+                    SequenceNode -> text ">" <> circle 1 # fc white # lwO 1
 
 renderNode :: Bool -> [ProjProperty] -> Node -> QDiagram B V2 Double Any
 renderNode _        _     (NodeRef n) = pad 1.1 $ roundedRect 30 2 0.5 <> text n
@@ -129,8 +130,8 @@ renderNode colorByP props (Node key prop c t p) =
                                        , (,2) <$> urlSection
                                        , (,2) <$> bottomSection]
           sections = map (\s -> strut (V2 0 $ snd s) <> fst s) hSizeAndSections
-          outerRect = rect 30 $ sum $ map snd hSizeAndSections
-          sectionsWithSep = vcat (intersperse (hrule 30 # dashingN [0.005, 0.005] 0 # lw 1) sections)
+          outerRect = rect 30 (sum $ map snd hSizeAndSections) # lwO 2
+          sectionsWithSep = vcat (intersperse (hrule 30 # dashingN [0.005, 0.005] 0 # lwO 1) sections)
       in outerRect # fcColor `beneath` centerY sectionsWithSep
 
     givenProp :: ProjProperty -> Maybe a -> Maybe a
@@ -138,9 +139,9 @@ renderNode colorByP props (Node key prop c t p) =
 
     headerSection = case (progressHeader, titleHeader, costHeader) of
                         (Nothing, Nothing, Nothing) -> Nothing
-                        (x, y, z) -> Just $ centerX $ fromMaybe mempty x
-                                                 |||  fromMaybe mempty y
-                                                 |||  fromMaybe mempty z
+                        (x, y, z) -> Just $ centerX (  fromMaybe mempty x
+                                                   ||| fromMaybe mempty y
+                                                   ||| fromMaybe mempty z)
     progressHeader = givenProp PProgress $ Just $ strut (V2 5 0) <> displayProgress p
     titleHeader = givenProp PTitle $ ((strut (V2 20 0) <>) . bold . text . title) <$> prop
     costHeader = givenProp PCost $ Just $ strut (V2 5 0) <> displayCost c

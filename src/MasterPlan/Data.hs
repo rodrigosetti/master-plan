@@ -110,8 +110,8 @@ cost sys (RefProj n) =
   case M.lookup n (bindings sys) of
     Just (TaskProj _ c _ p)     -> c * (1-p) -- cost is weighted by remaining progress
     Just (ExpressionProj _ p)   -> cost sys p -- TODO: avoid cyclic
-    Just (UnconsolidatedProj _) -> defaultCost -- default
-    Nothing                     -> error $ "project \"" ++ n ++ "\" is undefined" -- should not happen
+    Just (UnconsolidatedProj _) -> defaultCost -- mentioned but no props neither task defined
+    Nothing                     -> defaultCost -- mentioned but no props neither task defined
 cost sys (SequenceProj ps) = costConjunction sys ps
 cost sys (ProductProj ps) = costConjunction sys ps
 cost sys (SumProj ps) =
@@ -133,8 +133,8 @@ trust sys (RefProj n) =
   case M.lookup n (bindings sys) of
     Just (TaskProj _ _ t p)     -> p + t * (1-p)
     Just (ExpressionProj _ p)   -> trust sys p -- TODO: avoid cyclic
-    Just (UnconsolidatedProj _) -> defaultTrust -- default
-    Nothing                     -> error $ "project \"" ++ n ++ "\" is undefined" -- should not happen
+    Just (UnconsolidatedProj _) -> defaultTrust -- mentioned but no props neither task defined
+    Nothing                     -> defaultTrust -- mentioned but no props neither task defined
 trust sys (SequenceProj ps) = trustConjunction sys ps
 trust sys (ProductProj ps) = trustConjunction sys ps
 trust sys (SumProj ps) =
@@ -148,8 +148,8 @@ progress sys (RefProj n) =
   case M.lookup n (bindings sys) of
     Just (TaskProj _ _ _ p)     -> p
     Just (ExpressionProj _ p)   -> progress sys p -- TODO: avoid cyclic
-    Just (UnconsolidatedProj _) -> defaultProgress -- default
-    Nothing                     -> error $ "project \"" ++ n ++ "\" is undefined" -- should not happen
+    Just (UnconsolidatedProj _) -> defaultProgress -- props without task or expression
+    Nothing                     -> defaultProgress -- mentioned but no props neither task defined
 progress sys (SequenceProj ps)   = progressConjunction sys ps
 progress sys (ProductProj ps)    = progressConjunction sys ps
 progress sys (SumProj ps)        = maximum $ NE.map (progress sys) ps
