@@ -17,25 +17,25 @@ average ∷ RandomGen g ⇒ State g Float → Int → State g Float
 average sample n = do tot <- replicateM n sample
                       pure $ sum tot / fromIntegral n
 
-simulate ∷ RandomGen g ⇒ ProjectSystem → Project → State g (Bool, Cost)
-simulate sys (RefProj n) =
+simulate ∷ RandomGen g ⇒ ProjectSystem → ProjectExpr → State g (Bool, Cost)
+simulate sys (Reference n) =
    case M.lookup n (bindings sys) of
-     Just (TaskProj _ c t p) ->
+     Just (BindingAtomic _ c t p) ->
        do r <- state $ randomR (0, 1)
           let remainingProgress =  1 - p
               effectiveTrust = p + t * remainingProgress
               effectiveCost = c * remainingProgress
           pure (effectiveTrust > r, effectiveCost)
-     Just (ExpressionProj _ p)           -> simulate sys p -- TODO: avoid cyclic
-     Just (UnconsolidatedProj _)         -> pure (True, 0)
+     Just (BindingExpr _ p)           -> simulate sys p -- TODO: avoid cyclic
+     Just (BindingPlaceholder _)         -> pure (True, 0)
      Nothing                             -> pure (False, 0) -- should not happen
 
-simulate sys (SequenceProj ps)   = simulateConjunction sys $ NE.toList ps
-simulate sys (ProductProj ps)    = simulateConjunction sys $ NE.toList ps
-simulate sys (SumProj ps)        =
+simulate sys (Sequence ps)   = simulateConjunction sys $ NE.toList ps
+simulate sys (Product ps)    = simulateConjunction sys $ NE.toList ps
+simulate sys (Sum ps)        =
   simulate' $ NE.toList ps
  where
-   simulate' ∷ RandomGen g ⇒ [Project] → State g (Bool, Cost)
+   simulate' ∷ RandomGen g ⇒ [ProjectExpr] → State g (Bool, Cost)
    simulate' [] = pure (False, 0)
    simulate' (p:rest) = do (success, c) <- simulate sys p
                            if success then
@@ -44,7 +44,7 @@ simulate sys (SumProj ps)        =
                              do (success', c') <- simulate' rest
                                 pure (success', c + c')
 
-simulateConjunction ∷ RandomGen g ⇒ ProjectSystem → [Project] → State g (Bool, Cost)
+simulateConjunction ∷ RandomGen g ⇒ ProjectSystem → [ProjectExpr] → State g (Bool, Cost)
 simulateConjunction _ []       = pure (True, 0)
 simulateConjunction sys (p:rest) = do (success, c) <- simulate sys p
                                       if success then do
@@ -53,7 +53,7 @@ simulateConjunction sys (p:rest) = do (success, c) <- simulate sys p
                                       else
                                         pure (False, c)
 
-monteCarloTrustAndCost ∷ RandomGen g ⇒ Int → ProjectSystem → Project → State g (Trust, Cost)
+monteCarloTrustAndCost ∷ RandomGen g ⇒ Int → ProjectSystem → ProjectExpr → State g (Trust, Cost)
 monteCarloTrustAndCost n sys p = do results <- replicateM n $ simulate sys p
                                     let trusts = map (bool 0 1 . fst) results
                                     let costs = map snd results
@@ -81,7 +81,7 @@ spec = do
               (counterexample "disagree on cost"  $ cost'  `eq` cost  sys p) .&&.
               (counterexample "disagree on trust" $ trust' `eq` trust sys p)
              where
-               p = RefProj "root"
+               p = Reference "root"
                (trust', cost') = evalState (monteCarloTrustAndCost 50000 sys p) g
 
         property monteCarloAndAnalyticalAgree
@@ -91,7 +91,7 @@ spec = do
     let eq = aproximatelyEqual 0.005 0.005
 
     it "is irreductible" $ do
-      let simplificationIsIrreductible :: Project -> Property
+      let simplificationIsIrreductible :: ProjectExpr -> Property
           simplificationIsIrreductible p =
             let p' = simplifyProj p
                 p'' = simplifyProj p'
@@ -103,33 +103,33 @@ spec = do
       let propSimplifyIsStable :: ProjectSystem -> Property
           propSimplifyIsStable sys =
             let sys' = simplify sys
-                p    = RefProj "root"
+                p    = Reference "root"
              in cost sys p `eq` cost sys' p .&&. trust sys p `eq` trust sys' p
 
       property propSimplifyIsStable
 
   describe "optimization" $ do
 
-    let shuffleProjs :: NE.NonEmpty Project -> IO (NE.NonEmpty Project)
+    let shuffleProjs :: NE.NonEmpty ProjectExpr -> IO (NE.NonEmpty ProjectExpr)
         shuffleProjs ps = do ps' <- NE.toList <$> mapM shuffleProj ps
                              g <- newStdGen
                              pure $ NE.fromList $ shuffle' ps' (length ps') g
 
-        shuffleProj :: Project -> IO Project
-        shuffleProj (SumProj ps)      = SumProj <$> shuffleProjs ps
-        shuffleProj (ProductProj ps)  = ProductProj <$> shuffleProjs ps
+        shuffleProj :: ProjectExpr -> IO ProjectExpr
+        shuffleProj (Sum ps)      = Sum <$> shuffleProjs ps
+        shuffleProj (Product ps)  = Product <$> shuffleProjs ps
         shuffleProj p                 = pure p
 
     it "minimize cost and keep trust stable" $ do
       -- This test verifies that for any arbitrary project tree, the
-      -- optimized version of it will have the minimum cost.
+      -- prioritized version of it will have the minimum cost.
 
       let eq = aproximatelyEqual 0.005 0.005
 
-      let optimizeMinimizesCost :: ProjectSystem -> Property
-          optimizeMinimizesCost sys =
-            let (ExpressionProj _ p) = fromJust $ M.lookup "root" $ bindings sys
-                op = optimizeProj sys p
+      let prioritizeMinimizesCost :: ProjectSystem -> Property
+          prioritizeMinimizesCost sys =
+            let (BindingExpr _ p) = fromJust $ M.lookup "root" $ bindings sys
+                op = prioritizeProj sys p
                 ocost = cost sys op
                 otrust = trust sys op
                 costIsLessOrEqual p' =
@@ -138,4 +138,4 @@ spec = do
             in ioProperty $ do variations <- replicateM 10 (shuffleProj p)
                                return $ conjoin (map costIsLessOrEqual variations) .&.
                                         conjoin (map trustIsSame variations)
-      property optimizeMinimizesCost
+      property prioritizeMinimizesCost

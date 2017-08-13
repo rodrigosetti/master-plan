@@ -58,6 +58,7 @@ library
                        , MasterPlan.Parser
                        , MasterPlan.Backend.Graph
                        , MasterPlan.Backend.Identity
+                       , MasterPlan.Internal.Debug
 
 test-suite spec
   type:             exitcode-stdio-1.0

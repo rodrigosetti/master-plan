@@ -74,9 +74,9 @@ definition =
             , propsProp PDescription stringLiteral (\v p -> p { description = Just v})
             , propsProp PUrl stringLiteral (\v p -> p { url = Just v})
             , propsProp POwner stringLiteral (\v p -> p { owner = Just v})
-            , taskProp  PCost nonNegativeNumber (\v b -> case b of TaskProj r _ t p -> TaskProj r v t p; _ -> b)
-            , taskProp  PTrust percentage (\v b -> case b of TaskProj r c _ p -> TaskProj r c v p; _ -> b)
-            , taskProp  PProgress percentage (\v b -> case b of TaskProj r c t _ -> TaskProj r c t v; _ -> b)
+            , taskProp  PCost nonNegativeNumber (\v b -> case b of BindingAtomic r _ t p -> BindingAtomic r v t p; _ -> b)
+            , taskProp  PTrust percentage (\v b -> case b of BindingAtomic r c _ p -> BindingAtomic r c v p; _ -> b)
+            , taskProp  PProgress percentage (\v b -> case b of BindingAtomic r c t _ -> BindingAtomic r c t v; _ -> b)
             , structure ] :: [Parser ()])
   where
     structure :: Parser ()
@@ -90,10 +90,10 @@ definition =
 
                    let binding = M.lookup projName $ bindings sys
                    newBinding <- case binding of
-                                   Nothing -> pure $ ExpressionProj (defaultProjectProps { title=projName }) projectExpr
-                                   Just ExpressionProj {} -> fail $ "Redefinition of \"" ++ projName ++ "\"."
-                                   Just (UnconsolidatedProj p) -> pure $ ExpressionProj p projectExpr
-                                   Just TaskProj {} -> fail $ "Project \"" ++ projName ++ "\" is atomic"
+                                   Nothing -> pure $ BindingExpr (defaultProjectProps { title=projName }) projectExpr
+                                   Just BindingExpr {} -> fail $ "Redefinition of \"" ++ projName ++ "\"."
+                                   Just (BindingPlaceholder p) -> pure $ BindingExpr p projectExpr
+                                   Just BindingAtomic {} -> fail $ "ProjectExpr \"" ++ projName ++ "\" is atomic"
 
                    lift $ put $ sys { bindings = M.insert projName newBinding $ bindings sys }
 
@@ -101,19 +101,19 @@ definition =
     propsProp prop valueParser modifier =
        property prop valueParser setter
      where
-       setter projName val Nothing = pure $ UnconsolidatedProj $ modifier val $ defaultProjectProps { title=projName }
+       setter projName val Nothing = pure $ BindingPlaceholder $ modifier val $ defaultProjectProps { title=projName }
        setter _ val (Just p) = pure $ everywhere (mkT $ modifier val) p
 
-    taskProp :: ProjProperty -> Parser a -> (a -> ProjectBinding -> ProjectBinding) -> Parser ()
+    taskProp :: ProjProperty -> Parser a -> (a -> Binding -> Binding) -> Parser ()
     taskProp prop valueParser modifier =
        property prop valueParser setter
      where
        setter projName val Nothing = pure $ modifier val $ defaultTaskProj defaultProjectProps { title=projName }
-       setter projName _ (Just ExpressionProj {}) = fail $ "Project \"" ++ projName ++ "\" is not atomic."
-       setter _ val (Just (UnconsolidatedProj p)) = pure $ modifier val $ defaultTaskProj p
-       setter _ val (Just p@TaskProj {}) = pure $ modifier val p
+       setter projName _ (Just BindingExpr {}) = fail $ "ProjectExpr \"" ++ projName ++ "\" is not atomic."
+       setter _ val (Just (BindingPlaceholder p)) = pure $ modifier val $ defaultTaskProj p
+       setter _ val (Just p@BindingAtomic {}) = pure $ modifier val p
 
-    property ∷ ProjProperty → Parser a → (String -> a -> Maybe ProjectBinding -> Parser ProjectBinding) -> Parser ()
+    property ∷ ProjProperty → Parser a → (String -> a -> Maybe Binding -> Parser Binding) -> Parser ()
     property prop valueParser setter =
        do void $ symbol $ T.pack $ show prop
           projName <- parens identifier
@@ -124,23 +124,23 @@ definition =
               modifySys sys = sys { bindings = M.insert projName newBinding $ bindings sys }
           lift $ modify modifySys
 
-expressionParser ∷ Parser Project
+expressionParser ∷ Parser ProjectExpr
 expressionParser =
     simplifyProj <$> makeExprParser term table <?> "expression"
   where
-    term = parens expressionParser <|> (RefProj <$> identifier)
-    table = [[binary "*" (combineWith ProductProj)]
-            ,[binary "->" (combineWith SequenceProj)]
-            ,[binary "+" (combineWith SumProj)]]
+    term = parens expressionParser <|> (Reference <$> identifier)
+    table = [[binary "*" (combineWith Product)]
+            ,[binary "->" (combineWith Sequence)]
+            ,[binary "+" (combineWith Sum)]]
     binary  op f = InfixL  (f <$ symbol op)
 
-    combineWith :: (NE.NonEmpty Project -> Project) -> Project -> Project -> Project
+    combineWith :: (NE.NonEmpty ProjectExpr -> ProjectExpr) -> ProjectExpr -> ProjectExpr -> ProjectExpr
     combineWith c p1 p2 = c $ p1 NE.<| [p2]
 
-dependencies ∷ ProjectSystem -> Project → [ProjectKey]
+dependencies ∷ ProjectSystem -> ProjectExpr → [ProjectKey]
 dependencies sys = everything (++) ([] `mkQ` collectDep)
   where
-    collectDep (RefProj n) = nub $ n : everything (++) ([] `mkQ` collectDep) (M.lookup n $ bindings sys)
+    collectDep (Reference n) = nub $ n : everything (++) ([] `mkQ` collectDep) (M.lookup n $ bindings sys)
     collectDep _ = []
 
 projectSystem :: Parser ProjectSystem

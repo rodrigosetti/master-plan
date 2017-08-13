@@ -11,11 +11,13 @@ Portability : POSIX
 {-# LANGUAGE OverloadedStrings #-}
 module MasterPlan.Backend.Identity (render) where
 
-import           Control.Monad.RWS
+import           Control.Monad      (when, void)
+import           Control.Monad.RWS  (RWS, evalRWS, gets, tell, modify, asks)
 import           Data.Generics
 import           Data.List          (nub)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map           as M
+import           Data.Monoid ((<>))
 import qualified Data.Text          as T
 import           Data.Maybe         (fromMaybe)
 import           MasterPlan.Data
@@ -27,7 +29,7 @@ render (ProjectSystem bs) whitelist =
  where
    renderRest = gets M.keys >>= mapM_ renderName
 
-type RenderMonad = RWS [ProjProperty] T.Text (M.Map String ProjectBinding)
+type RenderMonad = RWS [ProjProperty] T.Text (M.Map String Binding)
 
 renderLine ∷ T.Text → RenderMonad ()
 renderLine s = tell $ s <> ";\n"
@@ -42,10 +44,10 @@ renderName projName =
                      modify $ M.delete projName
                      mapM_ renderName $ dependencies b
 
-dependencies ∷ ProjectBinding → [ProjectKey]
+dependencies ∷ Binding → [ProjectKey]
 dependencies = nub . everything (++) ([] `mkQ` collectDep)
   where
-    collectDep (RefProj n) = [n]
+    collectDep (Reference n) = [n]
     collectDep _           = []
 
 renderProps ∷ String → ProjectProperties → RenderMonad Bool
@@ -63,9 +65,9 @@ renderProperty projName prop val def toText
                         renderLine $ T.pack (show prop) <> "(" <> T.pack projName <> ") = " <> toText val
                    pure whitelisted
 
-renderBinding ∷ ProjectKey → ProjectBinding → RenderMonad Bool
-renderBinding projName (UnconsolidatedProj p) = renderProps projName p
-renderBinding projName (TaskProj props c t p) =
+renderBinding ∷ ProjectKey → Binding → RenderMonad Bool
+renderBinding projName (BindingPlaceholder p) = renderProps projName p
+renderBinding projName (BindingAtomic props c t p) =
     or <$> sequence [ renderProps projName props
                     , renderProperty projName PCost c 0 (T.pack . show)
                     , renderProperty projName PTrust t 1 percentage
@@ -74,7 +76,7 @@ renderBinding projName (TaskProj props c t p) =
     percentage n = T.pack $ show (n * 100) <> "%"
 
 
-renderBinding projName (ExpressionProj pr e) =
+renderBinding projName (BindingExpr pr e) =
     do void $ renderProps projName pr
        renderLine $ T.pack projName <> " = " <> expressionToStr False e
        pure True
@@ -83,8 +85,8 @@ renderBinding projName (ExpressionProj pr e) =
                                       s = T.intercalate (" " <> op <> " ") sube
                                    in if parens && length ps > 1 then "(" <> s <> ")" else s
 
-    expressionToStr :: Bool -> Project -> T.Text
-    expressionToStr _      (RefProj n)       = T.pack n
-    expressionToStr parens (ProductProj ps)  = combinedEToStr parens "*" ps
-    expressionToStr parens (SequenceProj ps) = combinedEToStr parens "->" ps
-    expressionToStr parens (SumProj ps)      = combinedEToStr parens "+" ps
+    expressionToStr :: Bool -> ProjectExpr -> T.Text
+    expressionToStr _      (Reference n)       = T.pack n
+    expressionToStr parens (Product ps)  = combinedEToStr parens "*" ps
+    expressionToStr parens (Sequence ps) = combinedEToStr parens "->" ps
+    expressionToStr parens (Sum ps)      = combinedEToStr parens "+" ps

@@ -10,26 +10,26 @@ Portability : POSIX
 {-# LANGUAGE UnicodeSyntax #-}
 module Main (main) where
 
-import           Data.List                   (intercalate)
-import qualified Data.List.NonEmpty          as NE
-import qualified Data.Map                    as M
-import           Data.Maybe                  (catMaybes, fromMaybe)
-import           Data.Semigroup              ((<>))
-import qualified Data.Text.IO                as TIO
+import           Data.List                (intercalate)
+import qualified Data.List.NonEmpty       as NE
+import qualified Data.Map                 as M
+import           Data.Maybe               (catMaybes, fromMaybe)
+import           Data.Semigroup           ((<>))
+import qualified Data.Text.IO             as TIO
 import           MasterPlan.Backend.Graph
 import           MasterPlan.Data
-import qualified MasterPlan.Parser           as P
+import qualified MasterPlan.Parser        as P
 import           Options.Applicative
-import           System.IO                   (hPutStr, stderr, stdin)
+import           System.IO                (hPutStr, stderr, stdin)
 
 -- |Type output from the command line parser
-data Opts = Opts { inputPath       :: Maybe FilePath
-                 , outputPath      :: Maybe FilePath
-                 , projFilter      :: ProjFilter -- ^ filter to consider
-                 , renderOptions   :: RenderOptions }
+data Opts = Opts { inputPath     :: Maybe FilePath
+                 , outputPath    :: Maybe FilePath
+                 , projFilter    :: ProjFilter -- ^ filter to consider
+                 , renderOptions :: RenderOptions }
   deriving (Show)
 
-newtype ProjFilter = ProjFilter (ProjectSystem -> Project → Bool)
+newtype ProjFilter = ProjFilter (ProjectSystem → ProjectExpr → Bool)
 
 noFilter ∷ ProjFilter
 noFilter = ProjFilter $ const $ const True
@@ -51,7 +51,7 @@ cmdParser = Opts <$> optional (strArgument ( help "plan file to read from (defau
                  <*> (filterParser <|> pure noFilter)
                  <*> renderOptionsParser
   where
-    renderOptionsParser :: Parser RenderOptions
+    renderOptionsParser ∷ Parser RenderOptions
     renderOptionsParser = RenderOptions <$> switch ( long "color"
                                                    <> short 'c'
                                                    <> help "color each project by progress")
@@ -94,16 +94,16 @@ main = masterPlan =<< execParser opts
      <> progDesc "See documentation on how to write project plan files"
      <> header "master-plan - project management tool for hackers" )
 
-filterBinding ∷ ProjectSystem → ProjFilter → ProjectBinding → Maybe ProjectBinding
-filterBinding sys (ProjFilter f) (ExpressionProj r e) = ExpressionProj r <$> filterProj e
+filterBinding ∷ ProjectSystem → ProjFilter → Binding → Maybe Binding
+filterBinding sys (ProjFilter f) (BindingExpr r e) = BindingExpr r <$> filterProj e
   where
-  filterProj p@(SumProj ps) = filterHelper p ps SumProj
-  filterProj p@(ProductProj ps) = filterHelper p ps ProductProj
-  filterProj p@(SequenceProj ps) = filterHelper p ps SequenceProj
-  filterProj p = if f sys p then Just p else Nothing
+  filterProj p@(Sum ps)      = filterHelper p ps Sum
+  filterProj p@(Product ps)  = filterHelper p ps Product
+  filterProj p@(Sequence ps) = filterHelper p ps Sequence
+  filterProj p                   = if f sys p then Just p else Nothing
 
   filterHelper p ps c = if f sys p then c <$> filterProjs ps else Nothing
-  filterProjs ps = NE.nonEmpty (catMaybes $ NE.toList $ NE.map filterProj ps)
+  filterProjs ps = NE.nonEmpty (catMaybes $ NE.toList $ filterProj <$> ps)
 
 filterBinding _   _ b = Just b
 
@@ -113,7 +113,7 @@ masterPlan opts =
        case P.runParser (fromMaybe "stdin" $ inputPath opts) contents of
           Left e    -> hPutStr stderr e
           Right sys@(ProjectSystem b) ->
-            do let sys' = optimizeSys $ ProjectSystem $ M.mapMaybe
+            do let sys' = prioritizeSys $ ProjectSystem $ M.mapMaybe
                                                     (filterBinding sys $ projFilter opts) b
                let outfile = fromMaybe (fromMaybe "output" (outputPath opts) ++ ".pdf") $ outputPath opts
                render outfile (renderOptions opts) sys'

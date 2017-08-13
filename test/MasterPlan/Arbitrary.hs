@@ -26,42 +26,42 @@ testingKeys = ["a", "b", "c", "d"]
 instance Arbitrary ProjectSystem where
 
   arbitrary = do bs <- replicateM (length testingKeys) arbitrary
-                 rootB <- ExpressionProj <$> arbitrary <*> arbitrary
+                 rootB <- BindingExpr <$> arbitrary <*> arbitrary
                  pure $ ProjectSystem $ M.insert "root" rootB $ M.fromList $ zip testingKeys bs
 
   shrink (ProjectSystem bs) =
       map ProjectSystem $ concatMap shrinkOne testingKeys
     where
-      shrinkOne ∷ String → [M.Map String ProjectBinding]
+      shrinkOne ∷ String → [M.Map String Binding]
       shrinkOne k = case M.lookup k bs of
         Nothing -> []
         Just b  -> map (\s -> M.adjust (const s) k bs) $ shrink b
 
-instance Arbitrary ProjectBinding where
+instance Arbitrary Binding where
 
-  -- NOTE: ProjectBinding arbitrary are always tasks (no expression)
+  -- NOTE: Binding arbitrary are always tasks (no expression)
   --       to avoid generating cycles
   arbitrary =
     let unitGen = elements [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
-     in frequency [ (50, TaskProj <$> arbitrary
+     in frequency [ (50, BindingAtomic <$> arbitrary
                                   <*> elements [0, 1 .. 100]
                                   <*> unitGen
                                   <*> unitGen)
-                  , (1, pure $ UnconsolidatedProj defaultProjectProps) ]
+                  , (1, pure $ BindingPlaceholder defaultProjectProps) ]
 
-  shrink (ExpressionProj pr e) = map (ExpressionProj pr) $ shrink e
+  shrink (BindingExpr pr e) = map (BindingExpr pr) $ shrink e
   shrink _                     = []
 
-instance Arbitrary Project where
+instance Arbitrary ProjectExpr where
 
   arbitrary =
     let shrinkFactor n = 3 * n `quot` 5
-    in  frequency [ (1, SumProj <$> scale shrinkFactor arbitrary)
-                  , (1, ProductProj <$> scale shrinkFactor arbitrary)
-                  , (1, SequenceProj <$> scale shrinkFactor arbitrary)
-                  , (2, RefProj <$> elements testingKeys) ]
+    in  frequency [ (1, Sum <$> scale shrinkFactor arbitrary)
+                  , (1, Product <$> scale shrinkFactor arbitrary)
+                  , (1, Sequence <$> scale shrinkFactor arbitrary)
+                  , (2, Reference <$> elements testingKeys) ]
 
-  shrink (SumProj ps)      = NE.toList ps
-  shrink (ProductProj ps)  = NE.toList ps
-  shrink (SequenceProj ps) = NE.toList ps
-  shrink (RefProj _)       = []
+  shrink (Sum ps)      = NE.toList ps
+  shrink (Product ps)  = NE.toList ps
+  shrink (Sequence ps) = NE.toList ps
+  shrink (Reference _)       = []

@@ -15,7 +15,7 @@ Portability : POSIX
 module MasterPlan.Backend.Graph (render, RenderOptions(..)) where
 
 import           MasterPlan.Data
-import           Diagrams.Prelude hiding (render)
+import           Diagrams.Prelude hiding (render, Product, Sum)
 import           Diagrams.Backend.Rasterific
 import           Data.List (intersperse)
 import           Control.Applicative ((<|>))
@@ -52,20 +52,20 @@ toRenderModel sys rootK = case M.lookup rootK (bindings sys) of
                             Nothing -> pure Nothing
                             Just b -> Just <$> bindingToRM rootK b
   where
-    bindingToRM :: ProjectKey -> ProjectBinding -> State [ProjectKey] RenderModel
-    bindingToRM key (ExpressionProj prop p) = projToRM p (Just key) (Just prop)
-    bindingToRM key (TaskProj prop c t p) = pure $ Leaf $ Node (Just key)
+    bindingToRM :: ProjectKey -> Binding -> State [ProjectKey] RenderModel
+    bindingToRM key (BindingExpr prop p) = projToRM p (Just key) (Just prop)
+    bindingToRM key (BindingAtomic prop c t p) = pure $ Leaf $ Node (Just key)
                                                                (Just prop)
                                                                c t p
-    bindingToRM key (UnconsolidatedProj prop) = pure $ Leaf $ Node (Just key)
+    bindingToRM key (BindingPlaceholder prop) = pure $ Leaf $ Node (Just key)
                                                                    (Just prop)
                                                                    defaultCost
                                                                    defaultTrust
                                                                    defaultProgress
 
     mkNode :: (Node -> NE.NonEmpty RenderModel -> RenderModel)
-           -> Project
-           -> NE.NonEmpty Project
+           -> ProjectExpr
+           -> NE.NonEmpty ProjectExpr
            -> Maybe ProjectKey
            -> Maybe ProjectProperties
            -> State [ProjectKey] RenderModel
@@ -75,11 +75,11 @@ toRenderModel sys rootK = case M.lookup rootK (bindings sys) of
                                      (progress sys p))
                                <$> mapM (\p' -> projToRM p' Nothing Nothing) ps
 
-    projToRM :: Project -> Maybe ProjectKey -> Maybe ProjectProperties -> State [ProjectKey] RenderModel
-    projToRM p@(SumProj ps) = mkNode (Tree SumNode) p ps
-    projToRM p@(SequenceProj ps) = mkNode (Tree SequenceNode) p ps
-    projToRM p@(ProductProj ps) = mkNode (Tree ProductNode) p ps
-    projToRM (RefProj n) =
+    projToRM :: ProjectExpr -> Maybe ProjectKey -> Maybe ProjectProperties -> State [ProjectKey] RenderModel
+    projToRM p@(Sum ps) = mkNode (Tree SumNode) p ps
+    projToRM p@(Sequence ps) = mkNode (Tree SequenceNode) p ps
+    projToRM p@(Product ps) = mkNode (Tree ProductNode) p ps
+    projToRM (Reference n) =
       \k p -> case M.lookup n $ bindings sys of
                 Nothing -> pure $ Leaf $ Node k (p <|> pure defaultProjectProps {title=n}) defaultCost defaultTrust defaultProgress
                 Just b -> do alreadyProcessed <- gets (n `elem`)
@@ -89,7 +89,7 @@ toRenderModel sys rootK = case M.lookup rootK (bindings sys) of
 
 -- |how many children
 treeSize :: Num a => Tree t n -> a
-treeSize (Tree _ _ ts) = sum $ NE.map treeSize ts
+treeSize (Tree _ _ ts) = sum $ treeSize <$> ts
 treeSize _ = 1
 
 data RenderOptions = RenderOptions { colorByProgress :: Bool
@@ -103,9 +103,8 @@ data RenderOptions = RenderOptions { colorByProgress :: Bool
 render ∷ FilePath -> RenderOptions-> ProjectSystem → IO ()
 render fp (RenderOptions colorByP w h rootK props) sys =
   let noRootEroor = text $ "no project named \"" ++ rootK ++ "\" found."
-      dia :: QDiagram B V2 Double Any
       dia = fromMaybe noRootEroor $ renderTree colorByP props <$> evalState (toRenderModel sys rootK) []
-  in renderRasterific fp (dims $ V2 (fromInteger w) (fromInteger h)) $ pad 1.05 $ centerXY dia
+  in renderRasterific fp (dims $ V2 (fromInteger w) (fromInteger h)) $ pad 1.01 $ centerXY dia
 
 renderTree :: Bool -> [ProjProperty] -> RenderModel -> QDiagram B V2 Double Any
 renderTree colorByP props (Leaf n) = alignL $ renderNode colorByP props n
@@ -133,7 +132,7 @@ renderTree colorByP props t@(Tree ty n ts) =
 
 renderNode :: Bool -> [ProjProperty] -> Node -> QDiagram B V2 Double Any
 renderNode _        _     (NodeRef n) =
-   text n <> roundedRect 30 12 0.5 # lwO 2 # fc white # dashingN [0.005, 0.005] 0 
+   text n <> roundedRect 30 12 0.5 # lwO 2 # fc white # dashingN [0.005, 0.005] 0
 renderNode colorByP props (Node _   prop c t p) =
    centerY nodeDia # withEnvelope (rect 30 12 :: D V2 Double)
   where
