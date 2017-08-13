@@ -22,4 +22,4 @@ install:
 
 script:
 # Build the package  and tests
-- stack --no-terminal test --test-arguments='--no-color -f specdoc --no-diff --print-cpu-time'
+- stack --no-terminal test
