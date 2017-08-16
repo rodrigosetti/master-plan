@@ -3,6 +3,8 @@
 module MasterPlan.ParserSpec (spec) where
 
 import           Data.Either                 (isRight)
+import qualified Data.Map                    as M
+import           Data.Maybe                  (fromJust)
 import           Data.Monoid                 ((<>))
 import qualified Data.Text                   as T
 import           MasterPlan.Arbitrary        ()
@@ -36,6 +38,27 @@ spec =
              in isRight parsed ==> parsed === Right sys'
 
       withMaxSuccess 50 propertyParseAndOutputIdentity
+
+    it "should parse without prioritization" $ do
+
+      let input = "root = a + b;\
+                  \a = x + y;\
+                  \b { cost 9 };\
+                  \x { cost 10 };\
+                  \y { cost 5 trust 90% };"
+
+      let (Right sys) = runParser "test" input
+
+      let (BindingExpr _ root) = fromJust $ M.lookup "root" (bindings sys)
+
+      cost sys root `shouldBe` 10.0
+
+      -- now prioritize... a little out of scope for this test, but fine:
+
+      let sys' = prioritizeSys sys
+      let (BindingExpr _ root') = fromJust $ M.lookup "root" (bindings sys')
+
+      cost sys' root' `shouldBe` 6.0
 
     it "should reject recursive equations" $ do
 
