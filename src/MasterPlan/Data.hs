@@ -7,11 +7,11 @@ Maintainer  : rodrigosetti@gmail.com
 Stability   : experimental
 Portability : POSIX
 -}
-{-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE OverloadedLists    #-}
-{-# LANGUAGE OverloadedStrings    #-}
-{-# LANGUAGE UnicodeSyntax      #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving      #-}
+{-# LANGUAGE DeriveDataTypeable         #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedLists            #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE UnicodeSyntax              #-}
 module MasterPlan.Data ( ProjectExpr(..)
                        , ProjectProperties(..)
                        , ProjectSystem(..)
@@ -39,7 +39,7 @@ import           Data.Generics
 import           Data.List.NonEmpty (NonEmpty ((:|)))
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map           as M
-import Data.String (IsString)
+import           Data.String        (IsString)
 
 -- * Types
 
@@ -118,8 +118,8 @@ cost ∷ ProjectSystem → ProjectExpr → Cost
 cost sys (Reference n) =
   case M.lookup n (bindings sys) of
     Just (BindingAtomic _ (Cost c) _ (Progress p)) -> Cost $ c * (1 - p) -- cost is weighted by remaining progress
-    Just (BindingExpr _ p)       -> cost sys p -- TODO:0 avoid cyclic
-    Nothing                      -> defaultCost -- mentioned but no props neither task defined
+    Just (BindingExpr _ p)                         -> cost sys p -- TODO:0 avoid cyclic
+    Nothing                                        -> defaultCost -- mentioned but no props neither task defined
 cost sys (Sequence ps) = costConjunction sys ps
 cost sys (Product ps) = costConjunction sys ps
 cost sys (Sum ps) =
@@ -140,8 +140,8 @@ trust ∷ ProjectSystem → ProjectExpr → Trust
 trust sys (Reference n) =
   case M.lookup n (bindings sys) of
     Just (BindingAtomic _ _ (Trust t) (Progress p)) -> Trust $ p + t * (1-p)
-    Just (BindingExpr _ p)       -> trust sys p -- TODO:10 avoid cyclic
-    Nothing                      -> defaultTrust -- mentioned but no props neither task defined
+    Just (BindingExpr _ p)                          -> trust sys p -- TODO:10 avoid cyclic
+    Nothing                                         -> defaultTrust -- mentioned but no props neither task defined
 trust sys (Sequence ps) = trustConjunction sys ps
 trust sys (Product ps) = trustConjunction sys ps
 trust sys (Sum ps) =

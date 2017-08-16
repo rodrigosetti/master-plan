@@ -13,7 +13,7 @@ x {
   description "can we build the technology ourselves"
 } h * b;
 
-h hire + acquihire;
+h = hire + acquihire;
 
 hire {
   title "hire"

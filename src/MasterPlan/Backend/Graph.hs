@@ -10,7 +10,6 @@ Portability : POSIX
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE MultiParamTypeClasses     #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
-{-# LANGUAGE TupleSections             #-}
 {-# LANGUAGE TypeFamilies              #-}
 {-# LANGUAGE UnicodeSyntax             #-}
 module MasterPlan.Backend.Graph (render, RenderOptions(..)) where
@@ -20,7 +19,7 @@ import           Control.Monad.State
 import           Data.List                   (intersperse)
 import qualified Data.List.NonEmpty          as NE
 import qualified Data.Map                    as M
-import           Data.Maybe                  (catMaybes, fromMaybe)
+import           Data.Maybe
 import           Data.Tree
 import           Diagrams.Backend.Rasterific
 import           Diagrams.Prelude            hiding (Product, Sum, render)
@@ -90,10 +89,10 @@ toRenderModel sys rootK = case M.lookup rootK (bindings sys) of
                                then pure $ Node (AtomicNode, NodeRef $ ProjectKey $ bindingTitle b) []
                                else modify (n:) >> bindingToRM n b
 
--- |how many children
-treeSize :: Tree a -> Double
-treeSize (Node _ []) = 1
-treeSize (Node _ ts) = sum $ treeSize <$> ts
+-- |how many leaf nodes
+leafCount :: Tree a -> Double
+leafCount (Node _ []) = 1
+leafCount (Node _ ts) = sum $ leafCount <$> ts
 
 -- |Options for rendering
 data RenderOptions = RenderOptions { colorByProgress  :: Bool -- ^Whether to color boxes depending on progress
@@ -113,15 +112,15 @@ render fp (RenderOptions colorByP w h rootK props) sys =
 renderTree :: Bool -> [ProjAttribute] -> RenderModel -> QDiagram B V2 Double Any
 renderTree colorByP props (Node (_, n) [])    = alignL $ renderNode colorByP props n
 renderTree colorByP props x@(Node (ty, n) ts@(t:_)) =
-    (strutY (12 * treeSize x) <> alignL (centerY $ renderNode colorByP props n))
+    (strutY (12 * leafCount x) <> alignL (centerY $ renderNode colorByP props n))
     |||  (translateX 2 typeSymbol # withEnvelope (mempty :: D V2 Double) <> hrule 4 # lwO 2)
     |||  centerY (headBar === treeBar sizes)
     |||  centerY (vcat $ map renderSubTree ts)
   where
-    sizes = map ((* 6) . treeSize) ts
+    sizes = map ((* 6) . leafCount) ts
     renderSubTree subtree = hrule 4 # lwO 2 ||| renderTree colorByP props subtree
 
-    headBar = strutY $ treeSize t * 6
+    headBar = strutY $ leafCount t * 6
 
     treeBar :: [Double] -> QDiagram B V2 Double Any
     treeBar (s1:s2:ss) = vrule s1 # lwO 2 === vrule s2 # lwO 2 === treeBar (s2:ss)
@@ -134,49 +133,56 @@ renderTree colorByP props x@(Node (ty, n) ts@(t:_)) =
                     ProductNode  -> text "x"
                     SequenceNode -> text "->"
                     AtomicNode   -> mempty
-      in txt # fontSizeL 2 # bold <> circle 2 # fc white # lwO 1
+      in txt # fontSizeL 2 # bold <> roundedRect 3 2 1 # fc white # lwO 1
 
 renderNode :: Bool -> [ProjAttribute] -> PNode -> QDiagram B V2 Double Any
 renderNode _        _     (NodeRef (ProjectKey n)) =
    text n <> roundedRect 30 12 0.5 # lwO 2 # fc white # dashingN [0.005, 0.005] 0
 renderNode colorByP props (PNode _   prop c t p) =
-   centerY nodeDia # withEnvelope (rect 30 12 :: D V2 Double)
+   centerY nodeDia <> strutY 12
   where
     nodeDia =
-      let hSizeAndSections = catMaybes [ (,2) <$> headerSection
-                                       , (,6) <$> descriptionSection
-                                       , (,2) <$> urlSection
-                                       , (,2) <$> bottomSection]
-          sections = map (\s -> strutY (snd s) <> fst s) hSizeAndSections
-          outerRect = rect 30 (sum $ map snd hSizeAndSections) # lwO 2
-          sectionsWithSep = vcat (intersperse (hrule 30 # dashingN [0.005, 0.005] 0 # lwO 1) sections)
-      in outerRect # fcColor `beneath` centerY sectionsWithSep
+      let sections = if isJust titleHeader
+                      then catMaybes [ headerSection
+                                     , descriptionSection
+                                     , urlSection
+                                     , bottomSection]
+                      else maybeToList simplifiedNode
+          sectionsWithSep = vcat (intersperse (hrule nodeW # dashingN [0.005, 0.005] 0 # lwO 1) sections)
+      in centerY (sectionsWithSep <> boundingRect sectionsWithSep # fc projColor # lwO 2)
+
+    nodeW = 30
+
+    simplifiedNode = case [progressHeader, trustHeader' text, costHeader] of
+                          [Nothing, Nothing, Nothing] -> Nothing
+                          l -> Just $ strutY 2 <> strutX nodeW <> mconcat (catMaybes l)
 
     givenProp :: ProjAttribute -> Maybe a -> Maybe a
     givenProp pro x = if pro `elem` props then x else Nothing
 
     headerSection = case [progressHeader, titleHeader, costHeader] of
                         [Nothing, Nothing, Nothing] -> Nothing
-                        l -> Just $ strutX 30 <> mconcat (catMaybes l)
-    progressHeader = givenProp PProgress $ Just $ displayProgress p # translateX (-14)
+                        l -> Just $ strutY 2 <> strutX nodeW <> mconcat (catMaybes l)
+    progressHeader = givenProp PProgress $ Just $ displayProgress p # translateX (-nodeW/2 + 1)
     titleHeader = givenProp PTitle $ (bold . text . title) <$> prop
-    costHeader = givenProp PCost $ Just $ displayCost c # translateX 14
+    costHeader = givenProp PCost $ Just $ displayCost c # translateX (nodeW/2 - 1)
 
     descriptionSection, urlSection, bottomSection :: Maybe (QDiagram B V2 Double Any)
-    descriptionSection = givenProp PDescription $ prop >>= description >>= (pure . text) -- TODO:50 line breaks
-    urlSection = givenProp PUrl $ prop >>= url >>= (pure . text) -- TODO:40 ellipsis
+    descriptionSection = givenProp PDescription $ prop >>= description >>= (pure . (strutY 6 <>) . text) -- TODO:50 line breaks
+    urlSection = givenProp PUrl $ prop >>= url >>= (pure . (strutY 2 <>) . text) -- TODO:40 ellipsis
 
-    bottomSection = case [trustSubSection, ownerSubSection] of
+    bottomSection = case [trustHeader, ownerHeader] of
                       [Nothing, Nothing] -> Nothing
-                      l -> Just $ strutX 30 <> mconcat (catMaybes l)
+                      l -> Just $ strutY 2 <> strutX nodeW <> mconcat (catMaybes l)
 
-    ownerSubSection = prop >>= owner >>= (pure . translateX 14 . rightText)
-    trustSubSection = translateX (-14) <$>
-                            case t of
-                              _  | PTrust `notElem` props -> Nothing
-                              t' | t' == 1 -> Nothing
-                              t' | t' == 0 -> Just $ leftText "impossible"
-                              _ -> Just $ leftText ("trust = " ++ percentageText t)
+    ownerHeader = prop >>= owner >>= (pure . translateX (nodeW/2 -1) . rightText)
+    trustHeader = translateX (-nodeW/2+1) <$> trustHeader' leftText
+
+    trustHeader' txt = case t of
+                          _  | PTrust `notElem` props -> Nothing
+                          t' | t' == 1 -> Nothing
+                          t' | t' == 0 -> Just $ txt "impossible"
+                          _  -> Just $ txt ("trust = " ++ percentageText t)
 
     displayCost c'
       | c' == 0   = mempty
@@ -188,9 +194,9 @@ renderNode colorByP props (PNode _   prop c t p) =
 
     -- color is red if the project hasn't started, green if it's done, or yellow
     -- otherwise (i.e.  in progress)
-    fcColor =
-      fc $ if colorByP then
-                (if p == 0 then pink else if p == 1 then lightgreen else lightyellow)
-           else white
+    projColor =
+      if colorByP then
+              (if p == 0 then pink else if p == 1 then lightgreen else lightyellow)
+         else white
 
     percentageText pct = show ((round $ pct * 100) :: Integer) ++ "%"
