@@ -1,0 +1,57 @@
+other "use other tools" = notText + proprietary + limited;
+
+notText {
+  title "not textual format"
+  description "hard to parse or edit"
+  cost 10
+};
+
+proprietary {
+  description "data is locked! risky!"
+  trust 20%
+  cost 1
+};
+
+limited {
+  description "missing features..."
+  cost 5
+  trust 90%
+};
+
+
+decision { description "which PM tool to use?" } = mp + other + notUseAnything;
+
+mp "use master plan" = (write -> render -> maintain)
+                     * (satisfied + addYourFeature);
+
+write {
+  title "write .plan file"
+  cost 1
+};
+
+render {
+  title "render diagram"
+  description "automatically prioritized. Like this one!"
+  cost 1
+};
+
+maintain {
+  description "refine, update, and re-render"
+  cost 2
+};
+
+satisfied {
+  description "master-plan meet my needs"
+  trust 70%
+};
+
+addYourFeature {
+  title "add your feature"
+  description "it's open source and Haskell (fun)"
+  cost 5
+};
+
+notUseAnything {
+   title "not use anything"
+   trust 10%
+};

@@ -44,14 +44,14 @@ import           Data.String        (IsString)
 -- * Types
 
 newtype Trust = Trust { getTrust :: Float }
-  deriving (Show, Eq, Data, Ord, Num, Real, RealFrac, Fractional)
+  deriving (Show, Eq, Data, Typeable, Ord, Num, Real, RealFrac, Fractional)
 newtype Cost = Cost { getCost :: Float }
-  deriving (Show, Eq, Data, Ord, Num, Real, RealFrac, Fractional)
+  deriving (Show, Eq, Data, Typeable, Ord, Num, Real, RealFrac, Fractional)
 newtype Progress = Progress { getProgress :: Float }
-  deriving (Show, Eq, Data, Ord, Num, Real, RealFrac, Fractional)
+  deriving (Show, Eq, Data, Typeable, Ord, Num, Real, RealFrac, Fractional)
 
 newtype ProjectKey = ProjectKey { getProjectKey :: String }
-  deriving (Show, Eq, Data, Ord, IsString)
+  deriving (Show, Eq, Data, Typeable, Ord, IsString)
 
 -- |Structure of a project expression
 data ProjectExpr = Sum (NE.NonEmpty ProjectExpr)
@@ -198,12 +198,16 @@ prioritizeSys sys = everywhere (mkT $ prioritizeProj sys) sys
 -- |Sort project in order that minimizes cost
 prioritizeProj ∷ ProjectSystem → ProjectExpr → ProjectExpr
 prioritizeProj sys (Sum ps)      =
-  let f p = getCost (cost sys p) / getTrust (trust sys p)
-  in Sum $ NE.sortWith (nanToInf . f) $ prioritizeProj sys <$> ps
+  let f p = getCost (cost sys' p) / getTrust (trust sys' p)
+      sys' = prioritizeSys sys
+  in Sum $ NE.sortWith (nanToInf . f) $ prioritizeProj sys' <$> ps
 prioritizeProj sys (Product ps)  =
-  let f p = getCost (cost sys p) / (1 - getTrust (trust sys p))
-  in Product $ NE.sortWith (nanToInf . f) $ prioritizeProj sys <$> ps
-prioritizeProj _   p                 = p
+  let f p = getCost (cost sys' p) / (1 - getTrust (trust sys' p))
+      sys' = prioritizeSys sys
+  in Product $ NE.sortWith (nanToInf . f) $ prioritizeProj sys' <$> ps
+prioritizeProj sys (Sequence ps)  =
+  Sequence $ prioritizeProj sys <$> ps
+prioritizeProj _   p             = p
 
 -- |Helper function to transform any Nan (not a number) to positive infinity
 nanToInf :: RealFloat a => a -> a

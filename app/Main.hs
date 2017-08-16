@@ -20,7 +20,8 @@ import           MasterPlan.Backend.Graph
 import           MasterPlan.Data
 import qualified MasterPlan.Parser        as P
 import           Options.Applicative
-import           System.IO                (hPutStr, stderr, stdin)
+import           System.Exit              (die)
+import           System.IO                (stdin)
 
 -- |Type output from the command line parser
 data Opts = Opts { inputPath     :: Maybe FilePath
@@ -111,7 +112,7 @@ masterPlan ∷ Opts → IO ()
 masterPlan opts =
     do contents <- maybe (TIO.hGetContents stdin) TIO.readFile $ inputPath opts
        case P.runParser (fromMaybe "stdin" $ inputPath opts) contents of
-          Left e    -> hPutStr stderr e
+          Left e    -> die e
           Right sys@(ProjectSystem b) ->
             do let sys' = prioritizeSys $ ProjectSystem $ M.mapMaybe
                                                     (filterBinding sys $ projFilter opts) b

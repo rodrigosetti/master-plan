@@ -105,7 +105,7 @@ data RenderOptions = RenderOptions { colorByProgress  :: Bool -- ^Whether to col
 -- | The main rendering function
 render ∷ FilePath -> RenderOptions-> ProjectSystem → IO ()
 render fp (RenderOptions colorByP w h rootK props) sys =
-  let noRootEroor = text $ "no project named \"" ++ getProjectKey rootK ++ "\" found."
+  let noRootEroor = texterific $ "no project named \"" ++ getProjectKey rootK ++ "\" found."
       dia = fromMaybe noRootEroor $ renderTree colorByP props <$> evalState (toRenderModel sys rootK) []
   in renderRasterific fp (dims2D (fromInteger w) (fromInteger h)) $ bgFrame 1 white $ centerXY dia
 
