@@ -1,6 +1,8 @@
-> This project is a business plan, which vision is state in
-> the "root" project - which is run a successful tech-based
-> business in a certain market.
+/*
+* This project is a business plan, which vision is state in
+* the "root" project - which is run a successful tech-based
+* business in a certain market.
+*/
 
 root {
   title "business"
@@ -55,8 +57,8 @@ phase3 {
   owner "engineering"
 };
 
-> Another way to get technology is to parner,
-> instead of building it:
+// Another way to get technology is to parner,
+// instead of building it:
 
 p {
   title "tech partner"
@@ -79,8 +81,8 @@ sb {
   owner "partnerships"
 };
 
-> Approval process is a sub-project we have to go once
-> regardless of which partnership, will "open the way"
+// Approval process is a sub-project we have to go once
+// regardless of which partnership, will "open the way"
 
 approvalProcess "approval process" legal -> budget -> executive;
 

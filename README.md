@@ -70,7 +70,8 @@ Available options:
 
 ### Syntax
 
-Comments start with ">" and go until the end of line.
+Comments are C/C++/Java style: line comments start with `//`, and block comments
+are in between `/*` and `*/`.
 
 Everything else are definitions, in the form `name [attributes] [expression] ;`.
 

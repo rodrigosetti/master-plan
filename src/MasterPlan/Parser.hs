@@ -12,9 +12,8 @@ Portability : POSIX
 {-# LANGUAGE UnicodeSyntax     #-}
 module MasterPlan.Parser (runParser) where
 
-import           Control.Applicative        (empty)
 import           Control.Monad.State
-import           Data.Generics              hiding (empty)
+import           Data.Generics
 import           Data.List                  (nub)
 import qualified Data.List.NonEmpty         as NE
 import qualified Data.Map                   as M
@@ -31,7 +30,8 @@ type Parser = Parsec Void T.Text
 
 -- |Space consumer
 sc ∷ Parser ()
-sc = L.space space1 (L.skipLineComment ">") empty
+sc = L.space space1 (L.skipLineComment "//") $
+                     L.skipBlockComment "/*" "*/"
 
 lexeme ∷ Parser a → Parser a
 lexeme = L.lexeme sc
