@@ -16,14 +16,14 @@ module MasterPlan.Backend.Graph (render, RenderOptions(..)) where
 
 import           Control.Applicative         ((<|>))
 import           Control.Monad.State
-import           Data.List                   (intersperse)
+import           Data.List                   (intersperse, isSuffixOf)
 import qualified Data.List.NonEmpty          as NE
 import qualified Data.Map                    as M
 import           Data.Maybe
 import           Data.Tree
 import           Diagrams.Backend.Rasterific
 import           Diagrams.Prelude            hiding (Product, Sum, render)
-import           Diagrams.TwoD.Text          (Text)
+import           Diagrams.TwoD.Text
 import           MasterPlan.Data
 import           Text.Printf                 (printf)
 
@@ -35,6 +35,35 @@ leftText = alignedText 0 0.5
 
 rightText :: (TypeableFloat n, Renderable (Text n) b) => String -> QDiagram b V2 n Any
 rightText = alignedText 1 0.5
+
+-- |Render text with possible overflow by breaking lines and truncating with ...
+textOverflow' :: (TypeableFloat n, Renderable (Text n) b)
+              => FontSlant
+              -> FontWeight
+              -> Int -- ^maximum number of lines to break
+              -> Int -- ^maximum number of chars per line
+              -> n -- ^line spacing
+              -> String -- ^the text
+              -> QDiagram b V2 n Any
+textOverflow' fs fw maxLines maxLineSize lineSpace txt =
+    vsep lineSpace $ map (texterific' fs fw) ss
+  where
+    ss = reverse $ foldl processWord [] $ words txt
+    processWord (l:ls) w
+      | length (l ++ w) > maxLineSize = if length ls >= maxLines
+                                         then (if "..." `isSuffixOf` l then l:ls else (l ++ " ..."):ls)
+                                         else w:l:ls
+      | otherwise = (l ++ " " ++ w):ls
+    processWord [] w = [w]
+
+-- |Render text with possible overflow by breaking lines and truncating with ...
+textOverflow :: (TypeableFloat n, Renderable (Text n) b)
+              => Int -- ^maximum number of lines to break
+              -> Int -- ^maximum number of chars per line
+              -> n -- ^line spacing
+              -> String -- ^the text
+              -> QDiagram b V2 n Any
+textOverflow = textOverflow' FontSlantNormal FontWeightNormal
 
 -- * Types
 
@@ -164,12 +193,17 @@ renderNode colorByP props (PNode _   prop c t p) =
                         [Nothing, Nothing, Nothing] -> Nothing
                         l -> Just $ strutY 2 <> strutX nodeW <> mconcat (catMaybes l)
     progressHeader = givenProp PProgress $ Just $ displayProgress p # translateX (-nodeW/2 + 1)
-    titleHeader = givenProp PTitle $ (bold . text . title) <$> prop
+    titleHeader = givenProp PTitle $
+                    (centerXY . textOverflow' FontSlantNormal FontWeightBold 1 30 0.1 . title) <$> prop
     costHeader = givenProp PCost $ Just $ displayCost c # translateX (nodeW/2 - 1)
 
     descriptionSection, urlSection, bottomSection :: Maybe (QDiagram B V2 Double Any)
-    descriptionSection = givenProp PDescription $ prop >>= description >>= (pure . (strutY 6 <>) . text) -- TODO:50 line breaks
-    urlSection = givenProp PUrl $ prop >>= url >>= (pure . (strutY 2 <>) . text) -- TODO:40 ellipsis
+    descriptionSection = givenProp PDescription $ prop
+                                                >>= description
+                                                >>= (pure . centerX . frame 0.3 . textOverflow 3 40 0.1)
+    urlSection = givenProp PUrl $ prop
+                                >>= url
+                                >>= (pure . centerX . frame 0.3 . textOverflow 1 20 0)
 
     bottomSection = case [trustHeader, ownerHeader] of
                       [Nothing, Nothing] -> Nothing
