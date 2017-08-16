@@ -7,13 +7,13 @@ Maintainer  : rodrigosetti@gmail.com
 Stability   : experimental
 Portability : POSIX
 -}
-{-# LANGUAGE UnicodeSyntax #-}
-{-# LANGUAGE OverloadedLists #-}
+{-# LANGUAGE OverloadedLists   #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE UnicodeSyntax     #-}
 module MasterPlan.Parser (runParser) where
 
-import           Control.Monad.State
 import           Control.Applicative        (empty)
+import           Control.Monad.State
 import           Data.Generics              hiding (empty)
 import           Data.List                  (nub)
 import qualified Data.List.NonEmpty         as NE
@@ -50,8 +50,8 @@ rws = map show [minBound :: ProjAttribute ..]
 identifier ∷ Parser String
 identifier = (lexeme . try) $ (:) <$> letterChar <*> many alphaNumChar
 
-nonKeywordIdentifier :: Parser String
-nonKeywordIdentifier = identifier >>= check
+projectKey :: Parser ProjectKey
+projectKey = ProjectKey <$> (identifier >>= check) <?> "project key"
   where
     check x
       | x `elem` rws = fail $ "keyword " ++ show x ++ " cannot be an identifier"
@@ -73,7 +73,7 @@ expression ∷ Parser ProjectExpr
 expression =
     simplifyProj <$> makeExprParser term table <?> "expression"
   where
-    term = parens expression <|> (Reference <$> nonKeywordIdentifier)
+    term = parens expression <|> (Reference <$> projectKey)
     table = [[binary "*" (combineWith Product)]
             ,[binary "->" (combineWith Sequence)]
             ,[binary "+" (combineWith Sum)]]
@@ -99,15 +99,15 @@ binding key = do (props, mc, mt, mp) <- try simpleTitle <|> try bracketAttribute
    attrKey = do n <- identifier <?> "attribute name"
                 case lookup n [(show a, a) | a <- [minBound::ProjAttribute ..]] of
                   Nothing -> fail $ "invalid attribute: \"" ++ n ++ "\""
-                  Just a -> pure a
+                  Just a  -> pure a
 
    simpleTitle, bracketAttributes, noAttributes :: Parser (ProjectProperties, Maybe Cost, Maybe Trust, Maybe Progress)
    simpleTitle = do s <- stringLiteral <?> "title"
                     pure (defaultProjectProps {title=s}, Nothing, Nothing, Nothing)
 
-   bracketAttributes = symbol "{" *> attributes (defaultProjectProps {title=key}) Nothing Nothing Nothing
+   bracketAttributes = symbol "{" *> attributes (defaultProjectProps {title=getProjectKey key}) Nothing Nothing Nothing
 
-   noAttributes = pure (defaultProjectProps {title=key}, Nothing, Nothing, Nothing)
+   noAttributes = pure (defaultProjectProps {title=getProjectKey key}, Nothing, Nothing, Nothing)
 
    attributes :: ProjectProperties -> Maybe Cost -> Maybe Trust -> Maybe Progress
               -> Parser (ProjectProperties, Maybe Cost, Maybe Trust, Maybe Progress)
@@ -127,13 +127,13 @@ binding key = do (props, mc, mt, mp) <- try simpleTitle <|> try bracketAttribute
                            s <- stringLiteral <?> "owner"
                            attributes (props {owner=Just s}) mc mt mp
               PCost -> do when (isJust mc) $ fail "redefinition of cost"
-                          c <- nonNegativeNumber <?> "cost"
+                          c <- Cost <$> nonNegativeNumber <?> "cost"
                           attributes props (Just c) mt mp
               PTrust -> do when (isJust mt) $ fail "redefinition of cost"
-                           t <- percentage <?> "trust"
+                           t <- Trust <$> percentage <?> "trust"
                            attributes props mc (Just t) mp
               PProgress -> do when (isJust mp) $ fail "redefinition of progress"
-                              p <- percentage <?> "progress"
+                              p <- Progress <$> percentage <?> "progress"
                               attributes props mc mt (Just p)
 
 
@@ -150,13 +150,13 @@ projectSystem =
  where
    mkProjSystem = ProjectSystem . M.fromList
 
-   definitions ds = do key <- sc *> nonKeywordIdentifier <?> "project key"
-                       when (key `elem` map fst ds) $ fail $ "redefinition of \"" ++ key ++ "\""
+   definitions ds = do key <- sc *> projectKey
+                       when (key `elem` map fst ds) $ fail $ "redefinition of \"" ++ getProjectKey key ++ "\""
                        b <- binding key <* symbol ";"
 
                        -- check if it's recursive
                        let deps = dependencies (mkProjSystem ds) b
-                       when (key `elem` deps) $ fail $ "definition of \"" ++ key ++ "\" is recursive"
+                       when (key `elem` deps) $ fail $ "definition of \"" ++ getProjectKey key ++ "\" is recursive"
 
                        let ds' = (key,b):ds
                        (try eof *> pure ds') <|> definitions ds'

@@ -7,19 +7,19 @@ Maintainer  : rodrigosetti@gmail.com
 Stability   : experimental
 Portability : POSIX
 -}
-{-# LANGUAGE UnicodeSyntax #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE UnicodeSyntax     #-}
 module MasterPlan.Backend.Identity (render) where
 
 import           Control.Monad      (when)
-import           Control.Monad.RWS  (RWS, evalRWS, gets, tell, modify)
+import           Control.Monad.RWS  (RWS, evalRWS, gets, modify, tell)
 import           Data.Generics
 import           Data.List          (nub)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map           as M
+import           Data.Maybe         (isJust)
 import           Data.Monoid        ((<>))
 import qualified Data.Text          as T
-import           Data.Maybe         (isJust)
 import           MasterPlan.Data
 
 -- |Plain text renderer
@@ -29,14 +29,14 @@ render (ProjectSystem bs) whitelist =
  where
    renderRest = gets M.keys >>= mapM_ renderName
 
-type RenderMonad = RWS [ProjAttribute] T.Text (M.Map String Binding)
+type RenderMonad = RWS [ProjAttribute] T.Text (M.Map ProjectKey Binding)
 
 renderName ∷ ProjectKey → RenderMonad ()
 renderName projName =
   do mb <- gets $ M.lookup projName
      case mb of
        Nothing -> pure ()
-       Just b  -> do tell $ T.pack projName
+       Just b  -> do tell $ T.pack $ getProjectKey projName
                      when (hasAttribute b) $ do
                        tell " {\n"
                        renderAttr b
@@ -52,7 +52,7 @@ renderName projName =
                                             || c /= defaultCost
                                             || t /= defaultTrust
                                             || p  /= defaultProgress
-   hasProperty props =  title props /= projName
+   hasProperty props =  title props /= getProjectKey projName
                      || isJust (description props)
                      || isJust (owner props)
                      || isJust (url props)
@@ -62,14 +62,15 @@ renderName projName =
    renderAttr (BindingExpr props _) = renderProps props
    renderAttr (BindingAtomic props c t p) =
      do renderProps props
-        when (c /= defaultCost) $ tell $ "cost " <> T.pack (show c) <> "\n"
-        when (t /= defaultTrust) $ tell $ "trust " <> percentage t <> "\n"
-        when (p /= defaultProgress) $ tell $ "progress " <> percentage p <> "\n"
+        when (c /= defaultCost) $ tell $ "cost " <> T.pack (show $ getCost c) <> "\n"
+        when (t /= defaultTrust) $ tell $ "trust " <> percentage (getTrust t) <> "\n"
+        when (p /= defaultProgress) $ tell $ "progress " <> percentage (getProgress p) <> "\n"
 
    renderProps :: ProjectProperties -> RenderMonad ()
    renderProps p = do let maybeRender :: T.Text -> Maybe String -> RenderMonad ()
                           maybeRender n = maybe (pure ()) (\x -> tell $ n <> " " <> T.pack (show x) <> "\n")
-                      when (title p /= projName) $ tell $ "title " <> T.pack (show $ title p) <> "\n"
+                      when (title p /= getProjectKey projName) $
+                        tell $ "title " <> T.pack (show $ title p) <> "\n"
                       maybeRender "description" (description p)
                       maybeRender "url" (url p)
                       maybeRender "owner" (owner p)
@@ -79,13 +80,13 @@ renderName projName =
                                   in if parens && length ps > 1 then "(" <> s <> ")" else s
 
    expressionToStr :: Bool -> ProjectExpr -> T.Text
-   expressionToStr _      (Reference n) = T.pack n
-   expressionToStr parens (Product ps)  = combinedEToStr parens "*" ps
-   expressionToStr parens (Sequence ps) = combinedEToStr parens "->" ps
-   expressionToStr parens (Sum ps)      = combinedEToStr parens "+" ps
+   expressionToStr _      (Reference (ProjectKey n)) = T.pack n
+   expressionToStr parens (Product ps)               = combinedEToStr parens "*" ps
+   expressionToStr parens (Sequence ps)              = combinedEToStr parens "->" ps
+   expressionToStr parens (Sum ps)                   = combinedEToStr parens "+" ps
 
 dependencies ∷ Binding → [ProjectKey]
 dependencies = nub . everything (++) ([] `mkQ` collectDep)
   where
     collectDep (Reference n) = [n]
-    collectDep _           = []
+    collectDep _             = []

@@ -64,12 +64,12 @@ cmdParser = Opts <$> optional (strArgument ( help "plan file to read from (defau
                                                          <> help "height of the output image"
                                                          <> value (-1)
                                                          <> metavar "NUMBER")
-                                        <*> strOption ( long "root"
-                                                       <> short 'r'
-                                                       <> help "name of the root project definition"
-                                                       <> value "root"
-                                                       <> showDefault
-                                                       <> metavar "NAME")
+                                        <*> (ProjectKey <$> strOption ( long "root"
+                                                                     <> short 'r'
+                                                                     <> help "name of the root project definition"
+                                                                     <> value "root"
+                                                                     <> showDefault
+                                                                     <> metavar "NAME"))
                                         <*> (invertProps <$> many (option property ( long "hide"
                                                                                    <> help "hide a particular property"
                                                                                    <> metavar (intercalate "|" $ map fst propertyNames))))
@@ -80,9 +80,9 @@ cmdParser = Opts <$> optional (strArgument ( help "plan file to read from (defau
     invertProps l = filter (`notElem` l) $ map snd propertyNames
 
     filterParser ∷ Parser ProjFilter
-    filterParser = (ProjFilter . mkProgressFilter) <$> option auto ( long "progress-below"
-                                                                   <> help "only display projects which progress is < N%"
-                                                                   <> metavar "N" )
+    filterParser = (ProjFilter . mkProgressFilter . Progress) <$> option auto ( long "progress-below"
+                                                                              <> help "only display projects which progress is < N%"
+                                                                              <> metavar "N" )
       where
         mkProgressFilter n sys p = progress sys p * 100 < n
 
@@ -100,7 +100,7 @@ filterBinding sys (ProjFilter f) (BindingExpr r e) = BindingExpr r <$> filterPro
   filterProj p@(Sum ps)      = filterHelper p ps Sum
   filterProj p@(Product ps)  = filterHelper p ps Product
   filterProj p@(Sequence ps) = filterHelper p ps Sequence
-  filterProj p                   = if f sys p then Just p else Nothing
+  filterProj p               = if f sys p then Just p else Nothing
 
   filterHelper p ps c = if f sys p then c <$> filterProjs ps else Nothing
   filterProjs ps = NE.nonEmpty (catMaybes $ NE.toList $ filterProj <$> ps)

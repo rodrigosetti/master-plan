@@ -1,4 +1,5 @@
-{-# LANGUAGE UnicodeSyntax #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE UnicodeSyntax     #-}
 module MasterPlan.Arbitrary () where
 
 import           Control.Monad             (replicateM)
@@ -20,7 +21,7 @@ instance Arbitrary ProjectProperties where
              (if isNothing (url p) then [] else [p { url = Nothing }]) ++
              (if isNothing (owner p) then [] else [p { owner = Nothing }])
 
-testingKeys ∷ [String]
+testingKeys ∷ [ProjectKey]
 testingKeys = ["a", "b", "c", "d"]
 
 instance Arbitrary ProjectSystem where
@@ -32,7 +33,7 @@ instance Arbitrary ProjectSystem where
   shrink (ProjectSystem bs) =
       map ProjectSystem $ concatMap shrinkOne testingKeys
     where
-      shrinkOne ∷ String → [M.Map String Binding]
+      shrinkOne ∷ ProjectKey → [M.Map ProjectKey Binding]
       shrinkOne k = case M.lookup k bs of
         Nothing -> []
         Just b  -> map (\s -> M.adjust (const s) k bs) $ shrink b
@@ -44,12 +45,12 @@ instance Arbitrary Binding where
   arbitrary =
     let unitGen = elements [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
      in BindingAtomic <$> arbitrary
-                      <*> elements [0, 1 .. 100]
-                      <*> unitGen
-                      <*> unitGen
+                      <*> (Cost <$> elements [0, 1 .. 100])
+                      <*> (Trust <$> unitGen)
+                      <*> (Progress <$> unitGen)
 
   shrink (BindingExpr pr e) = map (BindingExpr pr) $ shrink e
-  shrink _                     = []
+  shrink _                  = []
 
 instance Arbitrary ProjectExpr where
 
@@ -63,4 +64,4 @@ instance Arbitrary ProjectExpr where
   shrink (Sum ps)      = NE.toList ps
   shrink (Product ps)  = NE.toList ps
   shrink (Sequence ps) = NE.toList ps
-  shrink (Reference _)       = []
+  shrink (Reference _) = []

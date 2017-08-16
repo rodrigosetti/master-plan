@@ -1,4 +1,5 @@
-{-# LANGUAGE UnicodeSyntax #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE UnicodeSyntax     #-}
 module MasterPlan.DataSpec (spec) where
 
 import           Control.Monad.State
@@ -11,8 +12,8 @@ import           MasterPlan.Data
 import           System.Random
 import           System.Random.Shuffle (shuffle')
 import           Test.Hspec
-import           Test.QuickCheck       hiding (sample)
 import           Test.Hspec.QuickCheck (prop)
+import           Test.QuickCheck       hiding (sample)
 
 -- |Sample the simulation model of the execution of a project.
 -- It's a stateful computation with the random generator, which computes
@@ -21,12 +22,12 @@ import           Test.Hspec.QuickCheck (prop)
 simulate ∷ RandomGen g ⇒ ProjectSystem → ProjectExpr → State g (Bool, Cost)
 simulate sys (Reference n) =
    case M.lookup n (bindings sys) of
-     Just (BindingAtomic _ c t p) ->
+     Just (BindingAtomic _ (Cost c) (Trust t) (Progress p)) ->
        do r <- state $ randomR (0, 1)
           let remainingProgress =  1 - p
               effectiveTrust = p + t * remainingProgress
               effectiveCost = c * remainingProgress
-          pure (effectiveTrust > r, effectiveCost)
+          pure (effectiveTrust > r, Cost effectiveCost)
      Just (BindingExpr _ p)       -> simulate sys p -- TODO:30 avoid cyclic
      Nothing                      -> pure (True, defaultCost)
 
@@ -65,7 +66,7 @@ monteCarloTrustAndCost n sys p = do results <- replicateM n $ simulate sys p
                                     pure (sum trusts / fromIntegral n,
                                           sum costs / fromIntegral n)
 
-aproximatelyEqual ∷ Float -> Float -> Float → Float -> Property
+aproximatelyEqual ∷ (Show a, Real a, Fractional a) => a -> a -> a → a -> Property
 aproximatelyEqual alpha beta x y =
    counterexample (show x ++ " /= " ++ show y) $ diff <= max relError beta
   where
@@ -78,7 +79,8 @@ spec = do
 
     let g = mkStdGen 837183
 
-    let eq = aproximatelyEqual 0.05 0.05
+    let eq :: (Show a, Real a, Fractional a) => a -> a -> Property
+        eq = aproximatelyEqual 0.05 0.05
 
     prop "monte-carlo and analytical implementations should agree" $ do
         let p = Reference "root"
@@ -92,7 +94,8 @@ spec = do
 
   describe "simplification" $ do
 
-    let eq = aproximatelyEqual 0.005 0.005
+    let eq :: (Show a, Real a, Fractional a) => a -> a -> Property
+        eq = aproximatelyEqual 0.005 0.005
 
     prop "is irreductible" $ do
         let simplificationIsIrreductible :: ProjectExpr -> Property
@@ -119,9 +122,9 @@ spec = do
                              pure $ NE.fromList $ shuffle' ps' (length ps') g
 
         shuffleProj :: ProjectExpr -> IO ProjectExpr
-        shuffleProj (Sum ps)      = Sum <$> shuffleProjs ps
-        shuffleProj (Product ps)  = Product <$> shuffleProjs ps
-        shuffleProj p                 = pure p
+        shuffleProj (Sum ps)     = Sum <$> shuffleProjs ps
+        shuffleProj (Product ps) = Product <$> shuffleProjs ps
+        shuffleProj p            = pure p
 
     prop "minimize cost and keep trust stable" $ do
       -- This test verifies that for any arbitrary project tree, the

@@ -9,16 +9,18 @@ Portability : POSIX
 -}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE OverloadedLists    #-}
+{-# LANGUAGE OverloadedStrings    #-}
 {-# LANGUAGE UnicodeSyntax      #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving      #-}
 module MasterPlan.Data ( ProjectExpr(..)
                        , ProjectProperties(..)
                        , ProjectSystem(..)
                        , Binding(..)
-                       , ProjectKey
+                       , ProjectKey(..)
                        , ProjAttribute(..)
-                       , Trust
-                       , Cost
-                       , Progress
+                       , Trust(..)
+                       , Cost(..)
+                       , Progress(..)
                        , defaultProjectProps
                        , defaultCost
                        , defaultTrust
@@ -37,13 +39,19 @@ import           Data.Generics
 import           Data.List.NonEmpty (NonEmpty ((:|)))
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map           as M
+import Data.String (IsString)
 
 -- * Types
 
-type Trust = Float
-type Cost = Float
-type Progress = Float
-type ProjectKey = String
+newtype Trust = Trust { getTrust :: Float }
+  deriving (Show, Eq, Data, Ord, Num, Real, RealFrac, Fractional)
+newtype Cost = Cost { getCost :: Float }
+  deriving (Show, Eq, Data, Ord, Num, Real, RealFrac, Fractional)
+newtype Progress = Progress { getProgress :: Float }
+  deriving (Show, Eq, Data, Ord, Num, Real, RealFrac, Fractional)
+
+newtype ProjectKey = ProjectKey { getProjectKey :: String }
+  deriving (Show, Eq, Data, Ord, IsString)
 
 -- |Structure of a project expression
 data ProjectExpr = Sum (NE.NonEmpty ProjectExpr)
@@ -109,38 +117,38 @@ bindingTitle (BindingExpr ProjectProperties { title=t} _)       = t
 cost ∷ ProjectSystem → ProjectExpr → Cost
 cost sys (Reference n) =
   case M.lookup n (bindings sys) of
-    Just (BindingAtomic _ c _ p) -> c * (1-p) -- cost is weighted by remaining progress
+    Just (BindingAtomic _ (Cost c) _ (Progress p)) -> Cost $ c * (1 - p) -- cost is weighted by remaining progress
     Just (BindingExpr _ p)       -> cost sys p -- TODO:0 avoid cyclic
     Nothing                      -> defaultCost -- mentioned but no props neither task defined
 cost sys (Sequence ps) = costConjunction sys ps
 cost sys (Product ps) = costConjunction sys ps
 cost sys (Sum ps) =
-   sum $ map (\x -> (1 - snd x) * fst x) $ zip costs accTrusts
+   Cost $ sum $ map (\x -> (1 - snd x) * fst x) $ zip costs accTrusts
  where
-   accTrusts = NE.toList $ NE.scanl (\a b -> a + b*(1-a)) 0 $ trust sys <$> ps
-   costs = NE.toList $ cost sys <$> ps
+   costs = NE.toList $ (getCost . cost sys) <$> ps
+   accTrusts = NE.toList $ NE.scanl (\a b -> a + b*(1-a)) 0 $ (getTrust . trust sys) <$> ps
 
 costConjunction ∷ ProjectSystem → NE.NonEmpty ProjectExpr → Cost
 costConjunction sys ps =
-   sum $ zipWith (*) costs accTrusts
+   Cost $ sum $ zipWith (*) costs accTrusts
   where
-    costs = NE.toList $ cost sys <$> ps
-    accTrusts = NE.toList $ product <$> NE.inits (trust sys <$> ps)
+    costs = NE.toList $ (getCost . cost sys) <$> ps
+    accTrusts = NE.toList $ product <$> NE.inits ((getTrust . trust sys) <$> ps)
 
 -- | Expected probability of succeeding
 trust ∷ ProjectSystem → ProjectExpr → Trust
 trust sys (Reference n) =
   case M.lookup n (bindings sys) of
-    Just (BindingAtomic _ _ t p) -> p + t * (1-p)
+    Just (BindingAtomic _ _ (Trust t) (Progress p)) -> Trust $ p + t * (1-p)
     Just (BindingExpr _ p)       -> trust sys p -- TODO:10 avoid cyclic
     Nothing                      -> defaultTrust -- mentioned but no props neither task defined
 trust sys (Sequence ps) = trustConjunction sys ps
 trust sys (Product ps) = trustConjunction sys ps
 trust sys (Sum ps) =
-  foldl (\a b -> a + b*(1-a)) 0 $ trust sys <$> ps
+  Trust $ foldl (\a b -> a + b*(1-a)) 0 $ (getTrust . trust sys) <$> ps
 
 trustConjunction ∷ ProjectSystem → NE.NonEmpty ProjectExpr → Trust
-trustConjunction sys ps = product $ trust sys <$> ps
+trustConjunction sys ps = Trust $ product $ (getTrust . trust sys) <$> ps
 
 progress ∷ ProjectSystem → ProjectExpr → Progress
 progress sys (Reference n) =
@@ -190,10 +198,10 @@ prioritizeSys sys = everywhere (mkT $ prioritizeProj sys) sys
 -- |Sort project in order that minimizes cost
 prioritizeProj ∷ ProjectSystem → ProjectExpr → ProjectExpr
 prioritizeProj sys (Sum ps)      =
-  let f p = cost sys p / trust sys p
+  let f p = getCost (cost sys p) / getTrust (trust sys p)
   in Sum $ NE.sortWith (nanToInf . f) $ prioritizeProj sys <$> ps
 prioritizeProj sys (Product ps)  =
-  let f p = cost sys p / (1 - trust sys p)
+  let f p = getCost (cost sys p) / (1 - getTrust (trust sys p))
   in Product $ NE.sortWith (nanToInf . f) $ prioritizeProj sys <$> ps
 prioritizeProj _   p                 = p
 

@@ -7,25 +7,26 @@ Maintainer  : rodrigosetti@gmail.com
 Stability   : experimental
 Portability : POSIX
 -}
-{-# LANGUAGE UnicodeSyntax #-}
-{-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE FlexibleContexts          #-}
-{-# LANGUAGE TypeFamilies              #-}
+{-# LANGUAGE MultiParamTypeClasses     #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE TupleSections             #-}
+{-# LANGUAGE TypeFamilies              #-}
+{-# LANGUAGE UnicodeSyntax             #-}
 module MasterPlan.Backend.Graph (render, RenderOptions(..)) where
 
-import           MasterPlan.Data
-import           Diagrams.Prelude hiding (render, Product, Sum)
-import           Diagrams.Backend.Rasterific
-import           Data.List (intersperse)
-import           Control.Applicative ((<|>))
+import           Control.Applicative         ((<|>))
 import           Control.Monad.State
-import qualified Data.Map  as M
+import           Data.List                   (intersperse)
+import qualified Data.List.NonEmpty          as NE
+import qualified Data.Map                    as M
+import           Data.Maybe                  (catMaybes, fromMaybe)
 import           Data.Tree
-import           Data.Maybe (fromMaybe, catMaybes)
-import qualified Data.List.NonEmpty as NE
-import           Text.Printf (printf)
-import           Diagrams.TwoD.Text (Text)
+import           Diagrams.Backend.Rasterific
+import           Diagrams.Prelude            hiding (Product, Sum, render)
+import           Diagrams.TwoD.Text          (Text)
+import           MasterPlan.Data
+import           Text.Printf                 (printf)
 
 -- text :: (TypeableFloat n, Renderable (Text n) b) => String -> QDiagram b V2 n Any
 -- text = texterific
@@ -57,7 +58,7 @@ mkLeaf a = Node (AtomicNode, a) []
 toRenderModel :: ProjectSystem -> ProjectKey -> State [ProjectKey] (Maybe RenderModel)
 toRenderModel sys rootK = case M.lookup rootK (bindings sys) of
                             Nothing -> pure Nothing
-                            Just b -> Just <$> bindingToRM rootK b
+                            Just b  -> Just <$> bindingToRM rootK b
   where
     bindingToRM :: ProjectKey -> Binding -> State [ProjectKey] RenderModel
     bindingToRM key (BindingExpr prop p) = projToRM p (Just key) (Just prop)
@@ -83,10 +84,10 @@ toRenderModel sys rootK = case M.lookup rootK (bindings sys) of
     projToRM p@(Product ps) = mkNode (\x -> Node (ProductNode, x)) p ps
     projToRM (Reference n) =
       \k p -> case M.lookup n $ bindings sys of
-                Nothing -> pure $ Node (AtomicNode, PNode k (p <|> pure defaultProjectProps {title=n}) defaultCost defaultTrust defaultProgress) []
+                Nothing -> pure $ Node (AtomicNode, PNode k (p <|> pure defaultProjectProps {title=getProjectKey n}) defaultCost defaultTrust defaultProgress) []
                 Just b -> do alreadyProcessed <- gets (n `elem`)
                              if alreadyProcessed
-                               then pure $ Node (AtomicNode, NodeRef $ bindingTitle b) []
+                               then pure $ Node (AtomicNode, NodeRef $ ProjectKey $ bindingTitle b) []
                                else modify (n:) >> bindingToRM n b
 
 -- |how many children
@@ -95,17 +96,17 @@ treeSize (Node _ []) = 1
 treeSize (Node _ ts) = sum $ treeSize <$> ts
 
 -- |Options for rendering
-data RenderOptions = RenderOptions { colorByProgress :: Bool -- ^Whether to color boxes depending on progress
-                                   , renderWidth :: Integer -- ^The width of the output image
-                                   , renderHeight :: Integer -- ^The height of the output image
-                                   , rootKey :: ProjectKey -- ^The name of the root project
+data RenderOptions = RenderOptions { colorByProgress  :: Bool -- ^Whether to color boxes depending on progress
+                                   , renderWidth      :: Integer -- ^The width of the output image
+                                   , renderHeight     :: Integer -- ^The height of the output image
+                                   , rootKey          :: ProjectKey -- ^The name of the root project
                                    , whitelistedProps :: [ProjAttribute] -- ^Properties that should be rendered
                                    } deriving (Eq, Show)
 
 -- | The main rendering function
 render ∷ FilePath -> RenderOptions-> ProjectSystem → IO ()
 render fp (RenderOptions colorByP w h rootK props) sys =
-  let noRootEroor = text $ "no project named \"" ++ rootK ++ "\" found."
+  let noRootEroor = text $ "no project named \"" ++ getProjectKey rootK ++ "\" found."
       dia = fromMaybe noRootEroor $ renderTree colorByP props <$> evalState (toRenderModel sys rootK) []
   in renderRasterific fp (dims2D (fromInteger w) (fromInteger h)) $ bgFrame 1 white $ centerXY dia
 
@@ -129,14 +130,14 @@ renderTree colorByP props x@(Node (ty, n) ts@(t:_)) =
 
     typeSymbol =
       let txt = case ty of
-                    SumNode -> text "+"
-                    ProductNode -> text "x"
+                    SumNode      -> text "+"
+                    ProductNode  -> text "x"
                     SequenceNode -> text "->"
-                    AtomicNode -> mempty
+                    AtomicNode   -> mempty
       in txt # fontSizeL 2 # bold <> circle 2 # fc white # lwO 1
 
 renderNode :: Bool -> [ProjAttribute] -> PNode -> QDiagram B V2 Double Any
-renderNode _        _     (NodeRef n) =
+renderNode _        _     (NodeRef (ProjectKey n)) =
    text n <> roundedRect 30 12 0.5 # lwO 2 # fc white # dashingN [0.005, 0.005] 0
 renderNode colorByP props (PNode _   prop c t p) =
    centerY nodeDia # withEnvelope (rect 30 12 :: D V2 Double)
@@ -179,7 +180,7 @@ renderNode colorByP props (PNode _   prop c t p) =
 
     displayCost c'
       | c' == 0   = mempty
-      | otherwise = rightText $ "(" ++ printf "%.1f" c' ++ ")"
+      | otherwise = rightText $ "(" ++ printf "%.1f" (getCost c') ++ ")"
     displayProgress p'
       | p' == 0 = mempty
       | p' == 1 = leftText "done"

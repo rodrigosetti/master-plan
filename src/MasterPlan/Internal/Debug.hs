@@ -22,10 +22,11 @@ debugSys ∷ ProjectSystem → IO ()
 debugSys sys@(ProjectSystem bs) = void $ M.traverseWithKey printBinding bs
   where
     printBinding key b = do putStrLn "-------------------"
-                            putStr $ key ++ " = "
+                            putStr $ getProjectKey key ++ " = "
                             case b of
                               BindingExpr _ e -> putStr "\n" >> debugProj sys e
-                              BindingAtomic _ c t p -> putStrLn $ printf "(c:%.2f,t:%.2f,p:%2.f)" c t p
+                              BindingAtomic _ (Cost c) (Trust t) (Progress p) ->
+                                putStrLn $ printf "(c:%.2f,t:%.2f,p:%2.f)" c t p
 
 -- |Print a Project Expression in a Project System to standard output.
 -- The expression is printed in a tree like fashion.
@@ -36,9 +37,12 @@ debugProj sys = print' 0
      ident il = replicateM_ il $ putStr " |"
 
      print' ∷ Int → ProjectExpr → IO ()
-     print' il p@(Reference n)  = ident il >> putStr ("-" ++ n ++ "   ") >> ctp p
+     print' il p@(Reference (ProjectKey n))  = ident il >> putStr ("-" ++ n ++ "   ") >> ctp p
      print' il p@(Sum ps) = ident il >> putStr "-+   " >> ctp p >> forM_ ps (print' $ il+1)
      print' il p@(Sequence ps) = ident il >> putStr "->   " >> ctp p >> forM_ ps (print' $ il+1)
      print' il p@(Product ps) = ident il >> putStr "-*   " >> ctp p >> forM_ ps (print' $ il+1)
 
-     ctp p = putStrLn $ printf " c=%.2f  t=%.2f  p=%.2f" (cost sys p) (trust sys p) (progress sys p)
+     ctp p = putStrLn $ printf " c=%.2f  t=%.2f  p=%.2f"
+                               (getCost $ cost sys p)
+                               (getTrust $ trust sys p)
+                               (getProgress $ progress sys p)
