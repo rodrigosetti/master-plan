@@ -13,10 +13,12 @@ Portability : POSIX
 module MasterPlan.Parser (runParser) where
 
 import           Control.Monad.State
-import           Data.Generics
+import           Control.Applicative        (empty)
+import           Data.Generics              hiding (empty)
 import           Data.List                  (nub)
 import qualified Data.List.NonEmpty         as NE
 import qualified Data.Map                   as M
+import           Data.Maybe                 (fromMaybe, isJust)
 import qualified Data.Text                  as T
 import           Data.Void
 import           MasterPlan.Data
@@ -25,14 +27,11 @@ import           Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
 import           Text.Megaparsec.Expr
 
-type Parser = ParsecT Void T.Text (State ProjectSystem)
+type Parser = Parsec Void T.Text
 
 -- |Space consumer
 sc ∷ Parser ()
-sc = L.space space1 lineCmnt blockCmnt
-  where
-    lineCmnt  = L.skipLineComment "//"
-    blockCmnt = L.skipBlockComment "/*" "*/"
+sc = L.space space1 (L.skipLineComment ">") empty
 
 lexeme ∷ Parser a → Parser a
 lexeme = L.lexeme sc
@@ -46,12 +45,14 @@ parens = between (symbol "(") (symbol ")")
 
 -- |list of reserved words
 rws ∷ [String]
-rws = map show [minBound :: ProjProperty ..]
+rws = map show [minBound :: ProjAttribute ..]
 
 identifier ∷ Parser String
-identifier = (lexeme . try) (p >>= check)
+identifier = (lexeme . try) $ (:) <$> letterChar <*> many alphaNumChar
+
+nonKeywordIdentifier :: Parser String
+nonKeywordIdentifier = identifier >>= check
   where
-    p       = (:) <$> letterChar <*> many alphaNumChar
     check x
       | x `elem` rws = fail $ "keyword " ++ show x ++ " cannot be an identifier"
       | otherwise    = pure x
@@ -68,67 +69,11 @@ percentage = do n <- L.float <?> "percentage value"
 nonNegativeNumber :: Parser Float
 nonNegativeNumber = L.float
 
-definition ∷ Parser ()
-definition =
-    choice ([ propsProp PTitle stringLiteral (\v p -> p { title = v })
-            , propsProp PDescription stringLiteral (\v p -> p { description = Just v})
-            , propsProp PUrl stringLiteral (\v p -> p { url = Just v})
-            , propsProp POwner stringLiteral (\v p -> p { owner = Just v})
-            , taskProp  PCost nonNegativeNumber (\v b -> case b of BindingAtomic r _ t p -> BindingAtomic r v t p; _ -> b)
-            , taskProp  PTrust percentage (\v b -> case b of BindingAtomic r c _ p -> BindingAtomic r c v p; _ -> b)
-            , taskProp  PProgress percentage (\v b -> case b of BindingAtomic r c t _ -> BindingAtomic r c t v; _ -> b)
-            , structure ] :: [Parser ()])
-  where
-    structure :: Parser ()
-    structure = do projName <- identifier
-                   projectExpr <- symbol "=" *> expressionParser
-                   sys <- lift get
-
-                   -- check if it's recursive
-                   let deps = dependencies sys projectExpr
-                   when (projName `elem` deps) $ fail $ "definition of \"" ++ projName ++ "\" is recursive"
-
-                   let binding = M.lookup projName $ bindings sys
-                   newBinding <- case binding of
-                                   Nothing -> pure $ BindingExpr (defaultProjectProps { title=projName }) projectExpr
-                                   Just BindingExpr {} -> fail $ "Redefinition of \"" ++ projName ++ "\"."
-                                   Just (BindingPlaceholder p) -> pure $ BindingExpr p projectExpr
-                                   Just BindingAtomic {} -> fail $ "ProjectExpr \"" ++ projName ++ "\" is atomic"
-
-                   lift $ put $ sys { bindings = M.insert projName newBinding $ bindings sys }
-
-    propsProp :: ProjProperty -> Parser a -> (a -> ProjectProperties -> ProjectProperties) -> Parser ()
-    propsProp prop valueParser modifier =
-       property prop valueParser setter
-     where
-       setter projName val Nothing = pure $ BindingPlaceholder $ modifier val $ defaultProjectProps { title=projName }
-       setter _ val (Just p) = pure $ everywhere (mkT $ modifier val) p
-
-    taskProp :: ProjProperty -> Parser a -> (a -> Binding -> Binding) -> Parser ()
-    taskProp prop valueParser modifier =
-       property prop valueParser setter
-     where
-       setter projName val Nothing = pure $ modifier val $ defaultTaskProj defaultProjectProps { title=projName }
-       setter projName _ (Just BindingExpr {}) = fail $ "ProjectExpr \"" ++ projName ++ "\" is not atomic."
-       setter _ val (Just (BindingPlaceholder p)) = pure $ modifier val $ defaultTaskProj p
-       setter _ val (Just p@BindingAtomic {}) = pure $ modifier val p
-
-    property ∷ ProjProperty → Parser a → (String -> a -> Maybe Binding -> Parser Binding) -> Parser ()
-    property prop valueParser setter =
-       do void $ symbol $ T.pack $ show prop
-          projName <- parens identifier
-          mBinding <- lift $ M.lookup projName <$> gets bindings
-          value <- symbol "=" *> valueParser
-          newBinding <- setter projName value mBinding
-          let modifySys :: ProjectSystem -> ProjectSystem
-              modifySys sys = sys { bindings = M.insert projName newBinding $ bindings sys }
-          lift $ modify modifySys
-
-expressionParser ∷ Parser ProjectExpr
-expressionParser =
+expression ∷ Parser ProjectExpr
+expression =
     simplifyProj <$> makeExprParser term table <?> "expression"
   where
-    term = parens expressionParser <|> (Reference <$> identifier)
+    term = parens expression <|> (Reference <$> nonKeywordIdentifier)
     table = [[binary "*" (combineWith Product)]
             ,[binary "->" (combineWith Sequence)]
             ,[binary "+" (combineWith Sum)]]
@@ -137,7 +82,63 @@ expressionParser =
     combineWith :: (NE.NonEmpty ProjectExpr -> ProjectExpr) -> ProjectExpr -> ProjectExpr -> ProjectExpr
     combineWith c p1 p2 = c $ p1 NE.<| [p2]
 
-dependencies ∷ ProjectSystem -> ProjectExpr → [ProjectKey]
+
+binding :: ProjectKey -> Parser Binding
+--binding key = do (props, mc, mt, mp) <- bracketAttributes
+binding key = do (props, mc, mt, mp) <- try simpleTitle <|> try bracketAttributes <|> noAttributes
+                 case (mc, mt, mp) of
+                  (Nothing, Nothing, Nothing) ->
+                     try (BindingExpr props <$> (sc *> optional (symbol "=") *> expression)) <|>
+                       pure (BindingAtomic props defaultCost defaultTrust defaultProgress)
+                  (mc', mt', mp') -> pure $ BindingAtomic props
+                                                         (fromMaybe defaultCost mc')
+                                                         (fromMaybe defaultTrust mt')
+                                                         (fromMaybe defaultProgress mp')
+ where
+   attrKey :: Parser ProjAttribute
+   attrKey = do n <- identifier <?> "attribute name"
+                case lookup n [(show a, a) | a <- [minBound::ProjAttribute ..]] of
+                  Nothing -> fail $ "invalid attribute: \"" ++ n ++ "\""
+                  Just a -> pure a
+
+   simpleTitle, bracketAttributes, noAttributes :: Parser (ProjectProperties, Maybe Cost, Maybe Trust, Maybe Progress)
+   simpleTitle = do s <- stringLiteral <?> "title"
+                    pure (defaultProjectProps {title=s}, Nothing, Nothing, Nothing)
+
+   bracketAttributes = symbol "{" *> attributes (defaultProjectProps {title=key}) Nothing Nothing Nothing
+
+   noAttributes = pure (defaultProjectProps {title=key}, Nothing, Nothing, Nothing)
+
+   attributes :: ProjectProperties -> Maybe Cost -> Maybe Trust -> Maybe Progress
+              -> Parser (ProjectProperties, Maybe Cost, Maybe Trust, Maybe Progress)
+   attributes props mc mt mp =
+     try (sc *> symbol "}" *> pure (props, mc, mt, mp)) <|>
+         do attr <- sc *> attrKey
+            case attr of
+              PTitle -> do s <- stringLiteral <?> "title"
+                           attributes (props {title=s}) mc mt mp
+              PDescription -> do when (isJust $ description props) $ fail "redefinition of description"
+                                 s <- stringLiteral <?> "description"
+                                 attributes (props {description=Just s}) mc mt mp
+              PUrl -> do when (isJust $ url props) $ fail "redefinition of url"
+                         s <- stringLiteral <?> "url"
+                         attributes (props {url=Just s}) mc mt mp
+              POwner -> do when (isJust $ owner props) $ fail "redefinition of owner"
+                           s <- stringLiteral <?> "owner"
+                           attributes (props {owner=Just s}) mc mt mp
+              PCost -> do when (isJust mc) $ fail "redefinition of cost"
+                          c <- nonNegativeNumber <?> "cost"
+                          attributes props (Just c) mt mp
+              PTrust -> do when (isJust mt) $ fail "redefinition of cost"
+                           t <- percentage <?> "trust"
+                           attributes props mc (Just t) mp
+              PProgress -> do when (isJust mp) $ fail "redefinition of progress"
+                              p <- percentage <?> "progress"
+                              attributes props mc mt (Just p)
+
+
+-- find out all the names that a particular binding references
+dependencies ∷ ProjectSystem -> Binding → [ProjectKey]
 dependencies sys = everything (++) ([] `mkQ` collectDep)
   where
     collectDep (Reference n) = nub $ n : everything (++) ([] `mkQ` collectDep) (M.lookup n $ bindings sys)
@@ -145,15 +146,22 @@ dependencies sys = everything (++) ([] `mkQ` collectDep)
 
 projectSystem :: Parser ProjectSystem
 projectSystem =
-    do between sc eof definitionSeq
-       lift get
+    mkProjSystem <$> definitions []
  where
-   definitionSeq = void $ endBy1 definition (symbol ";")
+   mkProjSystem = ProjectSystem . M.fromList
 
+   definitions ds = do key <- sc *> nonKeywordIdentifier <?> "project key"
+                       when (key `elem` map fst ds) $ fail $ "redefinition of \"" ++ key ++ "\""
+                       b <- binding key <* symbol ";"
+
+                       -- check if it's recursive
+                       let deps = dependencies (mkProjSystem ds) b
+                       when (key `elem` deps) $ fail $ "definition of \"" ++ key ++ "\" is recursive"
+
+                       let ds' = (key,b):ds
+                       (try eof *> pure ds') <|> definitions ds'
 
 runParser :: FilePath -> T.Text -> Either String ProjectSystem
-runParser filename contents = let mr = runParserT projectSystem filename contents
-                                  initialPS = ProjectSystem M.empty
-                              in case evalState mr initialPS of
-                                    Left e -> Left $ parseErrorPretty' contents e
-                                    Right v -> Right v
+runParser filename contents = case parse projectSystem filename contents of
+                                Left e -> Left $ parseErrorPretty' contents e
+                                Right v -> Right v

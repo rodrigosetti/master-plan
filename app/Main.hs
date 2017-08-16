@@ -73,10 +73,10 @@ cmdParser = Opts <$> optional (strArgument ( help "plan file to read from (defau
                                         <*> (invertProps <$> many (option property ( long "hide"
                                                                                    <> help "hide a particular property"
                                                                                    <> metavar (intercalate "|" $ map fst propertyNames))))
-    propertyNames = map (\p -> (show p, p)) [minBound :: ProjProperty ..]
+    propertyNames = map (\p -> (show p, p)) [minBound :: ProjAttribute ..]
     property = readEnum propertyNames
 
-    invertProps ∷ [ProjProperty] → [ProjProperty]
+    invertProps ∷ [ProjAttribute] → [ProjAttribute]
     invertProps l = filter (`notElem` l) $ map snd propertyNames
 
     filterParser ∷ Parser ProjFilter

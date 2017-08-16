@@ -43,11 +43,10 @@ instance Arbitrary Binding where
   --       to avoid generating cycles
   arbitrary =
     let unitGen = elements [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
-     in frequency [ (50, BindingAtomic <$> arbitrary
-                                  <*> elements [0, 1 .. 100]
-                                  <*> unitGen
-                                  <*> unitGen)
-                  , (1, pure $ BindingPlaceholder defaultProjectProps) ]
+     in BindingAtomic <$> arbitrary
+                      <*> elements [0, 1 .. 100]
+                      <*> unitGen
+                      <*> unitGen
 
   shrink (BindingExpr pr e) = map (BindingExpr pr) $ shrink e
   shrink _                     = []

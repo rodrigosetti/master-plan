@@ -14,7 +14,7 @@ These are the values propositions of master plan:
  * **Freedom**: master plan is a open specification, not dependent on tools or hosting.
    There is this current open-source implementation, but anyone can implement
    tools or visualizations on top of it.
-   
+
 See the [wiki](https://github.com/rodrigosetti/master-plan/wiki) for details and examples.
 
 ## Algebra of Projects
@@ -34,9 +34,9 @@ things depending on the domain, but most usually it's time.
 Given all these constraints and structure, master plan will build an optimum
 prioritization of projects and sub-projects for execution.
 
-The entire definition of a project is defined into a single `.plan` file
-using a simple C-like language. There are defaults for most constrains and properties
-such that things can be less verbose if using the defaults.
+The entire definition of a project is defined into a single `.plan` file using a
+simple language. There are defaults for most constrains and properties such that
+things can be less verbose if using the defaults.
 
 The tool is able to build visualizations from the plan file.
 
@@ -70,18 +70,11 @@ Available options:
 
 ### Syntax
 
-Comments are C-style: multiline in between `/*` and `*/`, and single line starts
-with `//`, extending to the end of line. Every definition must end with semicolon (`;`).
+Comments start with ">" and go until the end of line.
 
-Everything else are definitions, in the form `lrs = rhs`.
-There are two kinds of definitions with respect to `lrs` (left hand side):
+Everything else are definitions, in the form `name [attributes] [expression] ;`.
 
- * Definition of a project: in the form `identifier = expression`
- * Definition of a property of a project: in the form `identifier(identifier) = expression`.
-   This is used to define properties of names.
-
-A project is identified by a unique identifier. The "root" project is identified
-by a special `root` identifier.
+A project name should be unique. Definitions end with semicolon.
 
 Project expressions are expressions where project identifiers are combined via
 binary operators. Parenthesis can be used to enforce operator precedence. There
@@ -91,9 +84,12 @@ are three operators:
  * `p = a x b` - Product: `p` is executed when `a` and `b` is executed.
  * `p = a -> b` - Sequence: `p` is executed when `a` and `b` is executed, in order.
 
-#### Properties
+Please note that a equal sign (`=`) can be placed optionally just before the
+definition of the expression.
 
-Following is a list of supported properties of projects:
+#### Attributes
+
+Following is a list of supported attributes of projects:
 
 | Property name | Expected Type | Description |
 |---------------|---------------|-------------|
@@ -101,23 +97,37 @@ Following is a list of supported properties of projects:
 | description   | text          | longer description of what the project is |
 | url           | URL           | reference in the web for more context about the project |
 | owner         | username      | name of the person responsible for execution |
-| progress      | percentage    | how much progress has been made so far |
-| cost          | number        | estimated cost |
-| trust         | percentage    | probability of success |
+| progress      | percentage    | how much progress has been made so far (default 0%) |
+| cost          | number        | estimated cost (default 0) |
+| trust         | percentage    | probability of success (default 100%) |
 
-#### Grammar
+Attributes can be specified between brackets, like, _e.g._:
 
 ```
-plan = (definition ";")*
-definition = project_def | predicate_def
+b {
+  title "build"
+  description "our technology can be built and scale"
+} phase1 -> phase2 -> phase3;
+```
 
-project_def = identifier "=" expression
-expression = term (("->" | "*") term)*
-term = factor ("+" factor)*
-factor = "(" expression ")" | identifier
+Or, optionally, if only "title" is define, as a single string literal, as _e.g._:
 
-predicate_def = identifier "(" identifier ")" "=" value
-value = percentage | literalString
+```
+approvalProcess "approval process" legal -> budget -> executive;
+```
 
-percentage = nonNegativeNumber "%"
+There are "atomic" attributes that should be defined only for projects without
+expressions: "cost", "trust", and "progress". Defining them and also expressions
+is an error.
+
+Example of atomic project:
+
+```
+sb {
+  title "supplier B"
+  trust 60%
+  cost 5
+  url "www.supplier.b.com"
+  owner "partnerships"
+};
 ```

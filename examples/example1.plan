@@ -1,64 +1,93 @@
-/**
- * This project is a business plan, which vision is state in
- * the "root" project - which is run a successful tech-based
- * business in a certain market.
- */
-title(root) = "business";
-description(root) = "can we run a successful business";
-owner(root) = "CEO";
+> This project is a business plan, which vision is state in
+> the "root" project - which is run a successful tech-based
+> business in a certain market.
 
-root = x + p;
+root {
+  title "business"
+  description "can we run a successful business"
+  owner "CEO"
+} x + p;
 
-// -------
+x {
+  title "build technology"
+  description "can we build the technology ourselves"
+} h * b;
 
-title(x) = "build technology";
-description(x) = "can we build the technology ourselves";
+h hire + acquihire;
 
-x = h * b;
+hire {
+  title "hire"
+  description "can we attract and retain talent"
+  cost 20
+  owner "HR"
+  trust 50%
+};
 
-title(h) = "hire";
-description(h) = "can we attract and retain talent";
-cost(h) = 20;
-owner(h) = "HR";
+acquihire {
+  description "can we buy talent"
+  cost 100
+  owner "HR"
+  trust 100%
+};
 
-title(b) = "build";
-description(b) = "our technology can be built and scale";
+b {
+  title "build"
+  description "our technology can be built and scale"
+} phase1 -> phase2 -> phase3;
 
-b = phase1 -> phase2 -> phase3;
+phase1 {
+  title "validate prototype"
+  trust 70%
+  progress 100%
+  owner "engineering"
+};
 
-title(phase1) = "validate prototype";
-trust(phase1) = 70%;
-progress(phase1) = 100%;
-owner(phase1) = "engineering";
+phase2 {
+  title "launch in small market"
+  trust 50%
+  progress 32%
+  owner "engineering"
+};
 
-title(phase2) = "launch in small market";
-trust(phase2) = 50%;
-progress(phase2) = 32%;
-owner(phase2) = "engineering";
+phase3 {
+  title "scale nationwide"
+  trust 20%
+  owner "engineering"
+};
 
-title(phase3) = "scale nationwide";
-trust(phase3) = 20%;
-owner(phase3) = "engineering";
+> Another way to get technology is to parner,
+> instead of building it:
 
-// Another way to get technology is to parner,
-// instead of building it:
+p {
+  title "tech partner"
+  description "secure a tech partnership"
+} (approvalProcess -> sa) + (approvalProcess -> sb);
 
-title(p) = "tech partner";
-description(p) = "secure a tech partnership";
+sa {
+  title "supplier A"
+  trust 90%
+  cost 10
+  url "www.supplier.a.com"
+  owner "partnerships"
+};
 
-p = (approvalProcess -> sa) + (approvalProcess -> sb);
+sb {
+  title "supplier B"
+  trust 60%
+  cost 5
+  url "www.supplier.b.com"
+  owner "partnerships"
+};
 
-title(sa) = "supplier A"; trust(sa) = 90%; cost(sa) = 10;
-url(sa) = "www.supplier.a.com";
-owner(sa) = "partnerships";
+> Approval process is a sub-project we have to go once
+> regardless of which partnership, will "open the way"
 
-title(sb) = "supplier B"; trust(sb) = 60%; cost(sb) = 5;
-url(sb) = "www.supplier.b.com";
-owner(sb) = "partnerships";
+approvalProcess "approval process" legal -> budget -> executive;
 
-/*
- * Approval process is a sub-project we have to go once
- * regardless of which partnership, will "open the way"
- */
-approvalProcess = legal -> budget -> executive;
-title(approvalProcess) = "approval process";
+legal {
+  description "figure out how to write the contract"
+};
+
+budget {
+  description "can we afford?"
+};

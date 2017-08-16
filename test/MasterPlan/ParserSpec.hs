@@ -17,7 +17,7 @@ spec ∷ Spec
 spec =
   describe "parser" $ do
 
-    let allProps = [minBound :: ProjProperty ..]
+    let allProps = [minBound :: ProjAttribute ..]
 
     prop "rendered should be parseable" $ do
       let renderedIsParseable ∷ ProjectSystem → Property

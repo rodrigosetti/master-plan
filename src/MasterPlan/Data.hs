@@ -15,7 +15,7 @@ module MasterPlan.Data ( ProjectExpr(..)
                        , ProjectSystem(..)
                        , Binding(..)
                        , ProjectKey
-                       , ProjProperty(..)
+                       , ProjAttribute(..)
                        , Trust
                        , Cost
                        , Progress
@@ -57,7 +57,6 @@ data ProjectExpr = Sum (NE.NonEmpty ProjectExpr)
 -- properties
 data Binding = BindingAtomic ProjectProperties Cost Trust Progress
                     | BindingExpr ProjectProperties ProjectExpr
-                    | BindingPlaceholder ProjectProperties
                    deriving (Eq, Show, Data, Typeable)
 
 -- |Any binding (with a name) may have associated properties
@@ -67,10 +66,10 @@ data ProjectProperties = ProjectProperties { title       :: String
                                            , owner       :: Maybe String
                                            } deriving (Eq, Show, Data, Typeable)
 
-data ProjProperty = PTitle | PDescription | PUrl | POwner | PCost | PTrust | PProgress
+data ProjAttribute = PTitle | PDescription | PUrl | POwner | PCost | PTrust | PProgress
   deriving (Eq, Enum, Bounded)
 
-instance Show ProjProperty where
+instance Show ProjAttribute where
   show PTitle       = "title"
   show PDescription = "description"
   show PUrl         = "url"
@@ -105,15 +104,13 @@ defaultTaskProj pr = BindingAtomic pr defaultCost defaultTrust defaultProgress
 bindingTitle ∷ Binding → String
 bindingTitle (BindingAtomic ProjectProperties { title=t} _ _ _) = t
 bindingTitle (BindingExpr ProjectProperties { title=t} _)       = t
-bindingTitle (BindingPlaceholder ProjectProperties { title=t})  = t
 
 -- | Expected cost
 cost ∷ ProjectSystem → ProjectExpr → Cost
 cost sys (Reference n) =
   case M.lookup n (bindings sys) of
     Just (BindingAtomic _ c _ p) -> c * (1-p) -- cost is weighted by remaining progress
-    Just (BindingExpr _ p)       -> cost sys p -- TODO: avoid cyclic
-    Just (BindingPlaceholder _)  -> defaultCost -- mentioned but no props neither task defined
+    Just (BindingExpr _ p)       -> cost sys p -- TODO:0 avoid cyclic
     Nothing                      -> defaultCost -- mentioned but no props neither task defined
 cost sys (Sequence ps) = costConjunction sys ps
 cost sys (Product ps) = costConjunction sys ps
@@ -135,8 +132,7 @@ trust ∷ ProjectSystem → ProjectExpr → Trust
 trust sys (Reference n) =
   case M.lookup n (bindings sys) of
     Just (BindingAtomic _ _ t p) -> p + t * (1-p)
-    Just (BindingExpr _ p)       -> trust sys p -- TODO: avoid cyclic
-    Just (BindingPlaceholder _)  -> defaultTrust -- mentioned but no props neither task defined
+    Just (BindingExpr _ p)       -> trust sys p -- TODO:10 avoid cyclic
     Nothing                      -> defaultTrust -- mentioned but no props neither task defined
 trust sys (Sequence ps) = trustConjunction sys ps
 trust sys (Product ps) = trustConjunction sys ps
@@ -150,8 +146,7 @@ progress ∷ ProjectSystem → ProjectExpr → Progress
 progress sys (Reference n) =
   case M.lookup n (bindings sys) of
     Just (BindingAtomic _ _ _ p) -> p
-    Just (BindingExpr _ p)       -> progress sys p -- TODO: avoid cyclic
-    Just (BindingPlaceholder _)  -> defaultProgress -- props without task or expression
+    Just (BindingExpr _ p)       -> progress sys p -- TODO:20 avoid cyclic
     Nothing                      -> defaultProgress -- mentioned but no props neither task defined
 progress sys (Sequence ps)   = progressConjunction sys ps
 progress sys (Product ps)    = progressConjunction sys ps

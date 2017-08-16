@@ -27,8 +27,7 @@ simulate sys (Reference n) =
               effectiveTrust = p + t * remainingProgress
               effectiveCost = c * remainingProgress
           pure (effectiveTrust > r, effectiveCost)
-     Just (BindingExpr _ p)       -> simulate sys p -- TODO: avoid cyclic
-     Just (BindingPlaceholder _)  -> pure (True, defaultCost)
+     Just (BindingExpr _ p)       -> simulate sys p -- TODO:30 avoid cyclic
      Nothing                      -> pure (True, defaultCost)
 
 simulate sys (Sequence ps)   = simulateConjunction sys $ NE.toList ps

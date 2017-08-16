@@ -64,11 +64,6 @@ toRenderModel sys rootK = case M.lookup rootK (bindings sys) of
     bindingToRM key (BindingAtomic prop c t p) = pure $ mkLeaf $ PNode (Just key)
                                                                        (Just prop)
                                                                        c t p
-    bindingToRM key (BindingPlaceholder prop) = pure $ mkLeaf $ PNode (Just key)
-                                                                      (Just prop)
-                                                                      defaultCost
-                                                                      defaultTrust
-                                                                      defaultProgress
 
     mkNode :: (PNode -> [RenderModel] -> RenderModel)
            -> ProjectExpr
@@ -104,7 +99,7 @@ data RenderOptions = RenderOptions { colorByProgress :: Bool -- ^Whether to colo
                                    , renderWidth :: Integer -- ^The width of the output image
                                    , renderHeight :: Integer -- ^The height of the output image
                                    , rootKey :: ProjectKey -- ^The name of the root project
-                                   , whitelistedProps :: [ProjProperty] -- ^Properties that should be rendered
+                                   , whitelistedProps :: [ProjAttribute] -- ^Properties that should be rendered
                                    } deriving (Eq, Show)
 
 -- | The main rendering function
@@ -114,7 +109,7 @@ render fp (RenderOptions colorByP w h rootK props) sys =
       dia = fromMaybe noRootEroor $ renderTree colorByP props <$> evalState (toRenderModel sys rootK) []
   in renderRasterific fp (dims2D (fromInteger w) (fromInteger h)) $ bgFrame 1 white $ centerXY dia
 
-renderTree :: Bool -> [ProjProperty] -> RenderModel -> QDiagram B V2 Double Any
+renderTree :: Bool -> [ProjAttribute] -> RenderModel -> QDiagram B V2 Double Any
 renderTree colorByP props (Node (_, n) [])    = alignL $ renderNode colorByP props n
 renderTree colorByP props x@(Node (ty, n) ts@(t:_)) =
     (strutY (12 * treeSize x) <> alignL (centerY $ renderNode colorByP props n))
@@ -140,7 +135,7 @@ renderTree colorByP props x@(Node (ty, n) ts@(t:_)) =
                     AtomicNode -> mempty
       in txt # fontSizeL 2 # bold <> circle 2 # fc white # lwO 1
 
-renderNode :: Bool -> [ProjProperty] -> PNode -> QDiagram B V2 Double Any
+renderNode :: Bool -> [ProjAttribute] -> PNode -> QDiagram B V2 Double Any
 renderNode _        _     (NodeRef n) =
    text n <> roundedRect 30 12 0.5 # lwO 2 # fc white # dashingN [0.005, 0.005] 0
 renderNode colorByP props (PNode _   prop c t p) =
@@ -156,7 +151,7 @@ renderNode colorByP props (PNode _   prop c t p) =
           sectionsWithSep = vcat (intersperse (hrule 30 # dashingN [0.005, 0.005] 0 # lwO 1) sections)
       in outerRect # fcColor `beneath` centerY sectionsWithSep
 
-    givenProp :: ProjProperty -> Maybe a -> Maybe a
+    givenProp :: ProjAttribute -> Maybe a -> Maybe a
     givenProp pro x = if pro `elem` props then x else Nothing
 
     headerSection = case [progressHeader, titleHeader, costHeader] of
@@ -167,8 +162,8 @@ renderNode colorByP props (PNode _   prop c t p) =
     costHeader = givenProp PCost $ Just $ displayCost c # translateX 14
 
     descriptionSection, urlSection, bottomSection :: Maybe (QDiagram B V2 Double Any)
-    descriptionSection = givenProp PDescription $ prop >>= description >>= (pure . text) -- TODO line breaks
-    urlSection = givenProp PUrl $ prop >>= url >>= (pure . text) -- TODO ellipsis
+    descriptionSection = givenProp PDescription $ prop >>= description >>= (pure . text) -- TODO:50 line breaks
+    urlSection = givenProp PUrl $ prop >>= url >>= (pure . text) -- TODO:40 ellipsis
 
     bottomSection = case [trustSubSection, ownerSubSection] of
                       [Nothing, Nothing] -> Nothing

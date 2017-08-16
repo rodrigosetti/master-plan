@@ -26,7 +26,6 @@ debugSys sys@(ProjectSystem bs) = void $ M.traverseWithKey printBinding bs
                             case b of
                               BindingExpr _ e -> putStr "\n" >> debugProj sys e
                               BindingAtomic _ c t p -> putStrLn $ printf "(c:%.2f,t:%.2f,p:%2.f)" c t p
-                              BindingPlaceholder _ -> putStrLn "?"
 
 -- |Print a Project Expression in a Project System to standard output.
 -- The expression is printed in a tree like fashion.
