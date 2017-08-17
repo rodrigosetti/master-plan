@@ -51,7 +51,7 @@ library
                        , diagrams
                        , diagrams-lib
                        , diagrams-rasterific
-                       , megaparsec
+                       , megaparsec >= 6.0.0
                        , mtl
                        , text
                        , syb
