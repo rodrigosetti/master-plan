@@ -12,7 +12,9 @@ Portability : POSIX
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE TypeFamilies              #-}
 {-# LANGUAGE UnicodeSyntax             #-}
-module MasterPlan.Backend.Graph (render, RenderOptions(..)) where
+module MasterPlan.Backend.Graph ( render
+                                , renderText
+                                , RenderOptions(..)) where
 
 import           Control.Applicative         ((<|>))
 import           Control.Monad.State
@@ -35,6 +37,22 @@ leftText = alignedText 0 0.5
 
 rightText :: (TypeableFloat n, Renderable (Text n) b) => String -> QDiagram b V2 n Any
 rightText = alignedText 1 0.5
+
+-- |Render multiline text
+multilineText' :: (TypeableFloat n, Renderable (Text n) b)
+               => FontSlant
+               -> FontWeight
+               -> n -- ^line spacing
+               -> [String] -- ^the lines of text to render
+               -> QDiagram b V2 n Any
+multilineText' fs fw lineSpace = vsep lineSpace . map (texterific' fs fw)
+
+-- |Render multiline text
+multilineText :: (TypeableFloat n, Renderable (Text n) b)
+              => n -- ^line spacing
+              -> [String] -- ^the lines of text to render
+              -> QDiagram b V2 n Any
+multilineText = multilineText' FontSlantNormal FontWeightNormal
 
 -- |Render text with possible overflow by breaking lines and truncating with ...
 textOverflow' :: (TypeableFloat n, Renderable (Text n) b)
@@ -136,6 +154,12 @@ render ∷ FilePath -> RenderOptions-> ProjectSystem → IO ()
 render fp (RenderOptions colorByP w h rootK props) sys =
   let noRootEroor = texterific $ "no project named \"" ++ getProjectKey rootK ++ "\" found."
       dia = fromMaybe noRootEroor $ renderTree colorByP props <$> evalState (toRenderModel sys rootK) []
+  in renderRasterific fp (dims2D (fromInteger w) (fromInteger h)) $ bgFrame 1 white $ centerXY dia
+
+-- |Render a multi-line text to file
+renderText ∷ FilePath -> RenderOptions-> [String] → IO ()
+renderText fp RenderOptions { renderWidth=w, renderHeight=h } ss =
+  let dia = multilineText (0.1 :: Float) ss
   in renderRasterific fp (dims2D (fromInteger w) (fromInteger h)) $ bgFrame 1 white $ centerXY dia
 
 renderTree :: Bool -> [ProjAttribute] -> RenderModel -> QDiagram B V2 Double Any

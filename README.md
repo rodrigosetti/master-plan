@@ -48,10 +48,10 @@ planning progress can be recorded.
 ```
 master-plan - project management tool for hackers
 
-Usage: master-plan  [FILENAME] [-o|--output FILENAME] [--progress-below N]
-                    [-c|--color] [-w|--width NUMBER] [--height NUMBER]
-                    [-r|--root NAME]
-                    [--hide title|description|url|owner|cost|trust|progress]
+Usage: master-plan [FILENAME] [-o|--output FILENAME] [--progress-below N]
+                   [--render-parse-error] [-c|--color] [-w|--width NUMBER]
+                   [--height NUMBER] [-r|--root NAME]
+                   [--hide title|description|url|owner|cost|trust|progress]
   See documentation on how to write project plan files
 
 Available options:
@@ -59,6 +59,8 @@ Available options:
   -o,--output FILENAME     output file name (.png, .tif, .bmp, .jpg and .pdf
                            supported)
   --progress-below N       only display projects which progress is < N%
+  --render-parse-error     instead of printing parsing errors, render as an
+                           image
   -c,--color               color each project by progress
   -w,--width NUMBER        width of the output image
   --height NUMBER          height of the output image

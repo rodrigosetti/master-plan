@@ -24,10 +24,11 @@ import           System.Exit              (die)
 import           System.IO                (stdin)
 
 -- |Type output from the command line parser
-data Opts = Opts { inputPath     :: Maybe FilePath
-                 , outputPath    :: Maybe FilePath
-                 , projFilter    :: ProjFilter -- ^ filter to consider
-                 , renderOptions :: RenderOptions }
+data Opts = Opts { inputPath          :: Maybe FilePath
+                 , outputPath         :: Maybe FilePath
+                 , projFilter         :: ProjFilter -- ^ filter to consider
+                 , renderParsingError :: Bool -- ^ will render the parsing error instead of printing
+                 , renderOptions      :: RenderOptions }
   deriving (Show)
 
 newtype ProjFilter = ProjFilter (ProjectSystem → ProjectExpr → Bool)
@@ -50,6 +51,8 @@ cmdParser = Opts <$> optional (strArgument ( help "plan file to read from (defau
                                          <> help "output file name (.png, .tif, .bmp, .jpg and .pdf supported)"
                                          <> metavar "FILENAME" ))
                  <*> (filterParser <|> pure noFilter)
+                 <*> switch ( long "render-parse-error"
+                            <> help "instead of printing parsing errors, render as an image")
                  <*> renderOptionsParser
   where
     renderOptionsParser ∷ Parser RenderOptions
@@ -111,10 +114,12 @@ filterBinding _   _ b = Just b
 masterPlan ∷ Opts → IO ()
 masterPlan opts =
     do contents <- maybe (TIO.hGetContents stdin) TIO.readFile $ inputPath opts
+       let outfile = fromMaybe (fromMaybe "output" (outputPath opts) ++ ".pdf") $ outputPath opts
        case P.runParser (fromMaybe "stdin" $ inputPath opts) contents of
-          Left e    -> die e
+          Left e    -> if renderParsingError opts
+                        then renderText outfile (renderOptions opts) (lines e)
+                        else die e
           Right sys@(ProjectSystem b) ->
             do let sys' = prioritizeSys $ ProjectSystem $ M.mapMaybe
                                                     (filterBinding sys $ projFilter opts) b
-               let outfile = fromMaybe (fromMaybe "output" (outputPath opts) ++ ".pdf") $ outputPath opts
                render outfile (renderOptions opts) sys'
