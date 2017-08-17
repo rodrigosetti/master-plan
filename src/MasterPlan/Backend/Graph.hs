@@ -214,17 +214,17 @@ renderNode colorByP props (PNode _   prop c t p) =
 
     trustHeader' txt = case t of
                           _  | PTrust `notElem` props -> Nothing
-                          t' | t' == 1 -> Nothing
+                          t' | t' == defaultTrust -> Nothing
                           t' | t' == 0 -> Just $ txt "impossible"
-                          _  -> Just $ txt ("trust = " ++ percentageText t)
+                          _  -> Just $ txt ("trust = " ++ percentageText (getTrust t))
 
     displayCost c'
-      | c' == 0   = mempty
+      | c' == defaultCost   = mempty
       | otherwise = rightText $ "(" ++ printf "%.1f" (getCost c') ++ ")"
     displayProgress p'
-      | p' == 0 = mempty
+      | p' == defaultProgress = mempty
       | p' == 1 = leftText "done"
-      | otherwise = leftText $ percentageText p'
+      | otherwise = leftText $ percentageText $ getProgress p'
 
     -- color is red if the project hasn't started, green if it's done, or yellow
     -- otherwise (i.e.  in progress)
@@ -233,4 +233,4 @@ renderNode colorByP props (PNode _   prop c t p) =
               (if p == 0 then pink else if p == 1 then lightgreen else lightyellow)
          else white
 
-    percentageText pct = show ((round $ pct * 100) :: Integer) ++ "%"
+    percentageText pct = printf "%.1f%%" (pct * 100)
