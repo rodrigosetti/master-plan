@@ -3,8 +3,6 @@
 module MasterPlan.ParserSpec (spec) where
 
 import           Data.Either                 (isRight)
-import qualified Data.Map                    as M
-import           Data.Maybe                  (fromJust)
 import           Data.Monoid                 ((<>))
 import qualified Data.Text                   as T
 import           MasterPlan.Arbitrary        ()
@@ -22,43 +20,40 @@ spec =
     let allProps = [minBound :: ProjAttribute ..]
 
     prop "rendered should be parseable" $ do
-      let renderedIsParseable ∷ ProjectSystem → Property
-          renderedIsParseable sys =
-            let rendered = render sys allProps
-             in counterexample (T.unpack rendered) $ isRight (runParser "test1" rendered)
+      let renderedIsParseable ∷ ProjectExpr → Property
+          renderedIsParseable p =
+            let rendered = render p allProps
+             in counterexample (T.unpack rendered) $ isRight (runParser False "test1" rendered "root")
 
       withMaxSuccess 50 renderedIsParseable
 
     prop "identity backend output should parse into the same input" $ do
 
-      let propertyParseAndOutputIdentity ∷ ProjectSystem → Property
-          propertyParseAndOutputIdentity sys =
-            let sys' = simplify sys
-                parsed = runParser "test2" (render sys' allProps)
-             in isRight parsed ==> parsed === Right sys'
+      let propertyParseAndOutputIdentity ∷ ProjectExpr → Property
+          propertyParseAndOutputIdentity p =
+            let p' = simplify p
+                parsed = runParser False "test2" (render p' allProps) "root"
+             in isRight parsed ==> parsed === Right p'
 
       withMaxSuccess 50 propertyParseAndOutputIdentity
 
     it "should parse without prioritization" $ do
 
-      let input = "root = a + b;\
+      let input = "main = a + b;\
                   \a = x + y;\
                   \b { cost 9 };\
                   \x { cost 10 };\
                   \y { cost 5 trust 90% };"
 
-      let (Right sys) = runParser "test" input
+      let (Right p) = runParser True "test" input "main"
 
-      let (BindingExpr _ root) = fromJust $ M.lookup "root" (bindings sys)
-
-      cost sys root `shouldBe` 10.0
+      cost p `shouldBe` 10.0
 
       -- now prioritize... a little out of scope for this test, but fine:
 
-      let sys' = prioritizeSys sys
-      let (BindingExpr _ root') = fromJust $ M.lookup "root" (bindings sys')
+      let p' = prioritize p
 
-      cost sys' root' `shouldBe` 6.0
+      cost p' `shouldBe` 6.0
 
     it "should reject recursive equations" $ do
 
@@ -72,22 +67,22 @@ spec =
       -- obvious
       let program1 = wrap ["root = a + b + root"]
 
-      runParser "recursive1" program1 `shouldSatisfy` expectedError "root"
+      runParser False "recursive1" program1 "root" `shouldSatisfy` expectedError "root"
 
       let program2 = wrap [ "root = a + b"
                           , "a = x * root" ]
 
-      runParser "recursive2" program2 `shouldSatisfy` expectedError "a"
+      runParser False "recursive2" program2 "root" `shouldSatisfy` expectedError "a"
 
-      let program3 = wrap [ "root = x + y"
+      let program3 = wrap [ "xxx = x + y"
                           , "a = b * c"
                           , "c = d -> a" ]
 
-      runParser "recursive3" program3 `shouldSatisfy` expectedError "c"
+      runParser False "recursive3" program3 "xxx" `shouldSatisfy` expectedError "c"
 
-      let program4 = wrap [ "root = a + y"
-                          , "d = x + root"
+      let program4 = wrap [ "yyy = a + y"
+                          , "d = x + yyy"
                           , "a = b * c"
                           , "c = d -> e" ]
 
-      runParser "recursive4" program4 `shouldSatisfy` expectedError "c"
+      runParser False "recursive4" program4 "yyy" `shouldSatisfy` expectedError "c"

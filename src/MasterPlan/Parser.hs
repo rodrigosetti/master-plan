@@ -10,13 +10,10 @@ Portability : POSIX
 {-# LANGUAGE OverloadedLists   #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE UnicodeSyntax     #-}
-module MasterPlan.Parser (runParser) where
+module MasterPlan.Parser (ProjectKey, runParser) where
 
 import           Control.Monad.State
-import           Data.Generics
-import           Data.List                  (nub)
 import qualified Data.List.NonEmpty         as NE
-import qualified Data.Map                   as M
 import           Data.Maybe                 (fromMaybe, isJust)
 import qualified Data.Text                  as T
 import           Data.Void
@@ -50,8 +47,8 @@ rws = map show [minBound :: ProjAttribute ..]
 identifier ∷ Parser String
 identifier = (lexeme . try) $ (:) <$> letterChar <*> many alphaNumChar
 
-projectKey :: Parser ProjectKey
-projectKey = ProjectKey <$> (identifier >>= check) <?> "project key"
+projectKey :: Parser String
+projectKey = (identifier >>= check) <?> "project key"
   where
     check x
       | x `elem` rws = fail $ "keyword " ++ show x ++ " cannot be an identifier"
@@ -69,31 +66,31 @@ percentage = do n <- L.float <?> "percentage value"
 nonNegativeNumber :: Parser Float
 nonNegativeNumber = L.float
 
-expression ∷ Parser ProjectExpr
-expression =
-    simplifyProj <$> makeExprParser term table <?> "expression"
+-- |Parses the part of right-hand-side after the optional properties
+--  (literal string title or properties between curly brackets)
+expression ∷ ProjectProperties -> Parser (Project ProjectKey)
+expression props =
+    simplify <$> makeExprParser term table <?> "expression"
   where
-    term = parens expression <|> (Reference <$> projectKey)
+    term =  parens (expression defaultProjectProps) <|> (Annotated <$> projectKey)
     table = [[binary "*" (combineWith Product)]
             ,[binary "->" (combineWith Sequence)]
             ,[binary "+" (combineWith Sum)]]
-    binary  op f = InfixL  (f <$ symbol op)
+    binary  op f = InfixL (f <$ symbol op)
 
-    combineWith :: (NE.NonEmpty ProjectExpr -> ProjectExpr) -> ProjectExpr -> ProjectExpr -> ProjectExpr
-    combineWith c p1 p2 = c $ p1 NE.<| [p2]
+    combineWith c p1 p2 = c props $ p1 NE.<| [p2]
 
-
-binding :: ProjectKey -> Parser Binding
---binding key = do (props, mc, mt, mp) <- bracketAttributes
+-- |Parses the entire right-hand-side of definitions
+binding :: ProjectKey -> Parser (Project ProjectKey)
 binding key = do (props, mc, mt, mp) <- try simpleTitle <|> try bracketAttributes <|> noAttributes
                  case (mc, mt, mp) of
                   (Nothing, Nothing, Nothing) ->
-                     try (BindingExpr props <$> (sc *> optional (symbol "=") *> expression)) <|>
-                       pure (BindingAtomic props defaultCost defaultTrust defaultProgress)
-                  (mc', mt', mp') -> pure $ BindingAtomic props
-                                                         (fromMaybe defaultCost mc')
-                                                         (fromMaybe defaultTrust mt')
-                                                         (fromMaybe defaultProgress mp')
+                     try (sc *> optional (symbol "=") *> expression props) <|>
+                       pure (Atomic props defaultCost defaultTrust defaultProgress)
+                  (mc', mt', mp') -> pure $ Atomic props
+                                                   (fromMaybe defaultCost mc')
+                                                   (fromMaybe defaultTrust mt')
+                                                   (fromMaybe defaultProgress mp')
  where
    attrKey :: Parser ProjAttribute
    attrKey = do n <- identifier <?> "attribute name"
@@ -103,11 +100,11 @@ binding key = do (props, mc, mt, mp) <- try simpleTitle <|> try bracketAttribute
 
    simpleTitle, bracketAttributes, noAttributes :: Parser (ProjectProperties, Maybe Cost, Maybe Trust, Maybe Progress)
    simpleTitle = do s <- stringLiteral <?> "title"
-                    pure (defaultProjectProps {title=s}, Nothing, Nothing, Nothing)
+                    pure (defaultProjectProps {title= Just s}, Nothing, Nothing, Nothing)
 
-   bracketAttributes = symbol "{" *> attributes (defaultProjectProps {title=getProjectKey key}) Nothing Nothing Nothing
+   bracketAttributes = symbol "{" *> attributes (defaultProjectProps {title=Just key}) Nothing Nothing Nothing
 
-   noAttributes = pure (defaultProjectProps {title=getProjectKey key}, Nothing, Nothing, Nothing)
+   noAttributes = pure (defaultProjectProps {title=Just key}, Nothing, Nothing, Nothing)
 
    attributes :: ProjectProperties -> Maybe Cost -> Maybe Trust -> Maybe Progress
               -> Parser (ProjectProperties, Maybe Cost, Maybe Trust, Maybe Progress)
@@ -116,7 +113,7 @@ binding key = do (props, mc, mt, mp) <- try simpleTitle <|> try bracketAttribute
          do attr <- sc *> attrKey
             case attr of
               PTitle -> do s <- stringLiteral <?> "title"
-                           attributes (props {title=s}) mc mt mp
+                           attributes (props {title=Just s}) mc mt mp
               PDescription -> do when (isJust $ description props) $ fail "redefinition of description"
                                  s <- stringLiteral <?> "description"
                                  attributes (props {description=Just s}) mc mt mp
@@ -137,31 +134,48 @@ binding key = do (props, mc, mt, mp) <- try simpleTitle <|> try bracketAttribute
                               attributes props mc mt (Just p)
 
 
--- find out all the names that a particular binding references
-dependencies ∷ ProjectSystem -> Binding → [ProjectKey]
-dependencies sys = everything (++) ([] `mkQ` collectDep)
-  where
-    collectDep (Reference n) = nub $ n : everything (++) ([] `mkQ` collectDep) (M.lookup n $ bindings sys)
-    collectDep _ = []
-
-projectSystem :: Parser ProjectSystem
-projectSystem =
-    mkProjSystem <$> definitions []
+-- |Parses the entire plan file, given the name of the "root" project.
+--  returns this project
+plan :: Bool -- ^ strict mode: fails if a reference has no definition
+     -> ProjectKey -- ^ the name of the root project
+     -> Parser ProjectExpr
+plan strictMode root =
+    do bindings <- definitions []
+       case lookup root bindings of
+         Nothing -> fail $ "root project \"" ++ root ++ "\" is undefined"
+         Just p  -> resolveReferences bindings [root] p
  where
-   mkProjSystem = ProjectSystem . M.fromList
 
+   -- definitions will parse into a list of tuples: (key, Project ProjectKey)
+   definitions :: [(ProjectKey, Project ProjectKey)] -> Parser [(ProjectKey, Project ProjectKey)]
    definitions ds = do key <- sc *> projectKey
-                       when (key `elem` map fst ds) $ fail $ "redefinition of \"" ++ getProjectKey key ++ "\""
+                       when (key `elem` map fst ds) $ fail $ "redefinition of \"" ++ key ++ "\""
                        b <- binding key <* symbol ";"
-
-                       -- check if it's recursive
-                       let deps = dependencies (mkProjSystem ds) b
-                       when (key `elem` deps) $ fail $ "definition of \"" ++ getProjectKey key ++ "\" is recursive"
-
                        let ds' = (key,b):ds
                        (try eof *> pure ds') <|> definitions ds'
 
-runParser :: FilePath -> T.Text -> Either String ProjectSystem
-runParser filename contents = case parse projectSystem filename contents of
-                                Left e -> Left $ parseErrorPretty' contents e
-                                Right v -> Right v
+   resolveReferences :: [(ProjectKey, Project ProjectKey)]
+                     -> [ProjectKey]
+                     -> Project ProjectKey
+                     -> Parser ProjectExpr
+   resolveReferences bs ks (Sum r ps) = Sum r <$> mapM (resolveReferences bs ks) ps
+   resolveReferences bs ks (Sequence r ps) = Sequence r <$> mapM (resolveReferences bs ks) ps
+   resolveReferences bs ks (Product r ps) = Product r <$> mapM (resolveReferences bs ks) ps
+   resolveReferences bs ks (Annotated k)
+      | k `elem` ks  = fail $ "definition of \"" ++ k ++ "\" is recursive"
+      | otherwise = case lookup k bs of
+                      Nothing
+                       | strictMode -> fail $ "project \"" ++ k ++ "\" is undefined"
+                       | otherwise -> pure defaultAtomic
+                      Just p  -> resolveReferences bs (k:ks) p
+   resolveReferences _ _ (Atomic r c t p) = pure $ Atomic r c t p
+
+runParser :: Bool -- ^ strict mode: fails if a reference has no definition
+          -> FilePath -- ^ the file name to use in error messages
+          -> T.Text -- ^ contents of the plan to parse
+          -> ProjectKey -- ^ the name of the root project
+          -> Either String ProjectExpr
+runParser strictMode filename contents root =
+  case parse (plan strictMode root) filename contents of
+      Left e  -> Left $ parseErrorPretty' contents e
+      Right v -> Right v

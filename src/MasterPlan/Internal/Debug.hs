@@ -8,41 +8,31 @@ Stability   : experimental
 Portability : POSIX
 -}
 {-# LANGUAGE UnicodeSyntax #-}
-module MasterPlan.Internal.Debug ( debugSys , debugProj) where
+module MasterPlan.Internal.Debug (printProject) where
 
-import           Control.Monad   (forM_, replicateM_, void)
-import qualified Data.Map        as M
+import           Control.Monad   (forM_, replicateM_)
+import           Data.Maybe      (fromMaybe)
 import           MasterPlan.Data
 import           Text.Printf     (printf)
 
 -- * Debugging
 
--- |Print a ProjectSystem to standard output
-debugSys ∷ ProjectSystem → IO ()
-debugSys sys@(ProjectSystem bs) = void $ M.traverseWithKey printBinding bs
-  where
-    printBinding key b = do putStrLn "-------------------"
-                            putStr $ getProjectKey key ++ " = "
-                            case b of
-                              BindingExpr _ e -> putStr "\n" >> debugProj sys e
-                              BindingAtomic _ (Cost c) (Trust t) (Progress p) ->
-                                putStrLn $ printf "(c:%.2f,t:%.2f,p:%2.f)" c t p
-
 -- |Print a Project Expression in a Project System to standard output.
 -- The expression is printed in a tree like fashion.
-debugProj ∷ ProjectSystem → ProjectExpr → IO ()
-debugProj sys = print' 0
+printProject ∷ ProjectExpr → IO ()
+printProject = print' 0
    where
      ident ∷ Int → IO ()
      ident il = replicateM_ il $ putStr " |"
 
      print' ∷ Int → ProjectExpr → IO ()
-     print' il p@(Reference (ProjectKey n))  = ident il >> putStr ("-" ++ n ++ "   ") >> ctp p
-     print' il p@(Sum ps) = ident il >> putStr "-+   " >> ctp p >> forM_ ps (print' $ il+1)
-     print' il p@(Sequence ps) = ident il >> putStr "->   " >> ctp p >> forM_ ps (print' $ il+1)
-     print' il p@(Product ps) = ident il >> putStr "-*   " >> ctp p >> forM_ ps (print' $ il+1)
+     print' il p@(Atomic r _ _ _)  = ident il >> putStr ("-" ++ fromMaybe "?" (title r) ++ "   ") >> ctp p
+     print' il p@(Sum _ ps) = ident il >> putStr "-+   " >> ctp p >> forM_ ps (print' $ il+1)
+     print' il p@(Sequence _ ps) = ident il >> putStr "->   " >> ctp p >> forM_ ps (print' $ il+1)
+     print' il p@(Product _ ps) = ident il >> putStr "-*   " >> ctp p >> forM_ ps (print' $ il+1)
+     print' _  (Annotated _ ) = undefined
 
      ctp p = putStrLn $ printf " c=%.2f  t=%.2f  p=%.2f"
-                               (getCost $ cost sys p)
-                               (getTrust $ trust sys p)
-                               (getProgress $ progress sys p)
+                               (getCost $ cost p)
+                               (getTrust $ trust p)
+                               (getProgress $ progress p)

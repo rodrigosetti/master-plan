@@ -12,11 +12,10 @@ Portability : POSIX
 {-# LANGUAGE OverloadedLists            #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE UnicodeSyntax              #-}
-module MasterPlan.Data ( ProjectExpr(..)
+module MasterPlan.Data ( ProjectExpr
+                       , ProjectKey
+                       , Project(..)
                        , ProjectProperties(..)
-                       , ProjectSystem(..)
-                       , Binding(..)
-                       , ProjectKey(..)
                        , ProjAttribute(..)
                        , Trust(..)
                        , Cost(..)
@@ -25,23 +24,24 @@ module MasterPlan.Data ( ProjectExpr(..)
                        , defaultCost
                        , defaultTrust
                        , defaultProgress
-                       , defaultTaskProj
-                       , bindingTitle
+                       , defaultAtomic
+                       , properties
                        , cost
                        , progress
                        , trust
                        , simplify
-                       , simplifyProj
-                       , prioritizeSys
-                       , prioritizeProj ) where
+                       , subprojects
+                       , prioritize ) where
 
 import           Data.Generics
 import           Data.List.NonEmpty (NonEmpty ((:|)))
 import qualified Data.List.NonEmpty as NE
-import qualified Data.Map           as M
-import           Data.String        (IsString)
+import           Data.Void          (Void)
 
 -- * Types
+
+-- |When using to reference projects by name
+type ProjectKey = String
 
 newtype Trust = Trust { getTrust :: Float }
   deriving (Show, Eq, Data, Typeable, Ord, Num, Real, RealFrac, Fractional)
@@ -50,25 +50,18 @@ newtype Cost = Cost { getCost :: Float }
 newtype Progress = Progress { getProgress :: Float }
   deriving (Show, Eq, Data, Typeable, Ord, Num, Real, RealFrac, Fractional)
 
-newtype ProjectKey = ProjectKey { getProjectKey :: String }
-  deriving (Show, Eq, Data, Typeable, Ord, IsString)
-
 -- |Structure of a project expression
-data ProjectExpr = Sum (NE.NonEmpty ProjectExpr)
-             | Product (NE.NonEmpty ProjectExpr)
-             | Sequence (NE.NonEmpty ProjectExpr)
-             | Reference ProjectKey
-            deriving (Eq, Show, Data, Typeable)
+data Project e = Sum ProjectProperties (NE.NonEmpty (Project e))
+               | Product ProjectProperties (NE.NonEmpty (Project e))
+               | Sequence ProjectProperties (NE.NonEmpty (Project e))
+               | Atomic ProjectProperties Cost Trust Progress
+               | Annotated e
+              deriving (Eq, Show, Data, Typeable)
 
--- |A binding of a name can refer to an expression. If there are no
--- associated expressions (i.e. equation) then it can have task-level
--- properties
-data Binding = BindingAtomic ProjectProperties Cost Trust Progress
-                    | BindingExpr ProjectProperties ProjectExpr
-                   deriving (Eq, Show, Data, Typeable)
+type ProjectExpr = Project Void
 
 -- |Any binding (with a name) may have associated properties
-data ProjectProperties = ProjectProperties { title       :: String
+data ProjectProperties = ProjectProperties { title       :: Maybe String
                                            , description :: Maybe String
                                            , url         :: Maybe String
                                            , owner       :: Maybe String
@@ -86,13 +79,8 @@ instance Show ProjAttribute where
   show PTrust       = "trust"
   show PProgress    = "progress"
 
--- |A project system defines the bindins (mapping from names to expressions or tasks)
--- and properties, which can be associated to any binding
-newtype ProjectSystem = ProjectSystem { bindings :: M.Map ProjectKey Binding }
-                          deriving (Eq, Show, Data, Typeable)
-
 defaultProjectProps ∷ ProjectProperties
-defaultProjectProps = ProjectProperties { title = "?"
+defaultProjectProps = ProjectProperties { title = Nothing
                                         , description = Nothing
                                         , url = Nothing
                                         , owner = Nothing }
@@ -106,108 +94,99 @@ defaultTrust = 1
 defaultProgress ∷ Progress
 defaultProgress = 0
 
-defaultTaskProj ∷ ProjectProperties → Binding
-defaultTaskProj pr = BindingAtomic pr defaultCost defaultTrust defaultProgress
-
-bindingTitle ∷ Binding → String
-bindingTitle (BindingAtomic ProjectProperties { title=t} _ _ _) = t
-bindingTitle (BindingExpr ProjectProperties { title=t} _)       = t
+defaultAtomic :: Project a
+defaultAtomic = Atomic defaultProjectProps defaultCost defaultTrust defaultProgress
 
 -- | Expected cost
-cost ∷ ProjectSystem → ProjectExpr → Cost
-cost sys (Reference n) =
-  case M.lookup n (bindings sys) of
-    Just (BindingAtomic _ (Cost c) _ (Progress p)) -> Cost $ c * (1 - p) -- cost is weighted by remaining progress
-    Just (BindingExpr _ p)                         -> cost sys p -- TODO:0 avoid cyclic
-    Nothing                                        -> defaultCost -- mentioned but no props neither task defined
-cost sys (Sequence ps) = costConjunction sys ps
-cost sys (Product ps) = costConjunction sys ps
-cost sys (Sum ps) =
+cost ∷ ProjectExpr → Cost
+cost (Atomic _ (Cost c) _ (Progress p)) = Cost $ c * (1 - p) -- cost is weighted by remaining progress
+cost (Sequence _ ps) = costConjunction ps
+cost (Product _ ps) = costConjunction ps
+cost (Sum _ ps) =
    Cost $ sum $ map (\x -> (1 - snd x) * fst x) $ zip costs accTrusts
  where
-   costs = NE.toList $ (getCost . cost sys) <$> ps
-   accTrusts = NE.toList $ NE.scanl (\a b -> a + b*(1-a)) 0 $ (getTrust . trust sys) <$> ps
+   costs = NE.toList $ (getCost . cost) <$> ps
+   accTrusts = NE.toList $ NE.scanl (\a b -> a + b*(1-a)) 0 $ (getTrust . trust) <$> ps
+cost (Annotated _) = undefined
 
-costConjunction ∷ ProjectSystem → NE.NonEmpty ProjectExpr → Cost
-costConjunction sys ps =
+costConjunction ∷ NE.NonEmpty ProjectExpr → Cost
+costConjunction ps =
    Cost $ sum $ zipWith (*) costs accTrusts
   where
-    costs = NE.toList $ (getCost . cost sys) <$> ps
-    accTrusts = NE.toList $ product <$> NE.inits ((getTrust . trust sys) <$> ps)
+    costs = NE.toList $ (getCost . cost) <$> ps
+    accTrusts = NE.toList $ product <$> NE.inits ((getTrust . trust) <$> ps)
 
 -- | Expected probability of succeeding
-trust ∷ ProjectSystem → ProjectExpr → Trust
-trust sys (Reference n) =
-  case M.lookup n (bindings sys) of
-    Just (BindingAtomic _ _ (Trust t) (Progress p)) -> Trust $ p + t * (1-p)
-    Just (BindingExpr _ p)                          -> trust sys p -- TODO:10 avoid cyclic
-    Nothing                                         -> defaultTrust -- mentioned but no props neither task defined
-trust sys (Sequence ps) = trustConjunction sys ps
-trust sys (Product ps) = trustConjunction sys ps
-trust sys (Sum ps) =
-  Trust $ foldl (\a b -> a + b*(1-a)) 0 $ (getTrust . trust sys) <$> ps
+trust ∷ ProjectExpr → Trust
+trust (Atomic _ _ (Trust t) (Progress p)) = Trust $ p + t * (1-p) -- reduced by progress
+trust (Sequence _ ps) = trustConjunction ps
+trust (Product _ ps) = trustConjunction ps
+trust (Sum _ ps) =
+  Trust $ foldl (\a b -> a + b*(1-a)) 0 $ (getTrust . trust) <$> ps
+trust (Annotated _) = undefined
 
-trustConjunction ∷ ProjectSystem → NE.NonEmpty ProjectExpr → Trust
-trustConjunction sys ps = Trust $ product $ (getTrust . trust sys) <$> ps
+trustConjunction ∷ NE.NonEmpty ProjectExpr → Trust
+trustConjunction ps = Trust $ product $ (getTrust . trust) <$> ps
 
-progress ∷ ProjectSystem → ProjectExpr → Progress
-progress sys (Reference n) =
-  case M.lookup n (bindings sys) of
-    Just (BindingAtomic _ _ _ p) -> p
-    Just (BindingExpr _ p)       -> progress sys p -- TODO:20 avoid cyclic
-    Nothing                      -> defaultProgress -- mentioned but no props neither task defined
-progress sys (Sequence ps)   = progressConjunction sys ps
-progress sys (Product ps)    = progressConjunction sys ps
-progress sys (Sum ps)        = maximum $ progress sys <$> ps
+subprojects :: Project a -> [Project a]
+subprojects (Sequence _ ps) = NE.toList ps
+subprojects (Product _ ps)  = NE.toList ps
+subprojects (Sum _ ps)      = NE.toList ps
+subprojects _               = []
 
-progressConjunction ∷ ProjectSystem → NE.NonEmpty ProjectExpr → Progress
-progressConjunction sys ps = sum (progress sys <$> ps) / fromIntegral (length ps)
 
--- |Simplify a project binding structure
-simplify ∷ ProjectSystem → ProjectSystem
-simplify = everywhere (mkT simplifyProj)
+properties :: Project a -> Maybe ProjectProperties
+properties (Annotated _)        = Nothing
+properties (Product props _)    = Just props
+properties (Sequence props _)   = Just props
+properties (Sum props _)        = Just props
+properties (Atomic props _ _ _) = Just props
+
+progress ∷ ProjectExpr → Progress
+progress (Atomic _ _ _ p) = p
+progress (Sequence _ ps)  = progressConjunction ps
+progress (Product _ ps)   = progressConjunction ps
+progress (Sum _ ps)       = maximum $ progress <$> ps
+progress (Annotated _)    = undefined
+
+progressConjunction ∷ NE.NonEmpty ProjectExpr → Progress
+progressConjunction ps = sum (progress <$> ps) / fromIntegral (length ps)
 
 -- |Simplify a project expression structure
 --  1) transform singleton collections into it's only child
 --  2) flatten same constructor of the collection
-simplifyProj ∷ ProjectExpr → ProjectExpr
-simplifyProj (Sum (p :| []))      = simplifyProj p
-simplifyProj (Product (p :| []))  = simplifyProj p
-simplifyProj (Sequence (p :| [])) = simplifyProj p
-simplifyProj (Sum ps) =
-    Sum $ (reduce . simplifyProj) =<< ps
+simplify ∷ Project a → Project a
+simplify (Sum _ (p :| []))      = simplify p
+simplify (Product _ (p :| []))  = simplify p
+simplify (Sequence _ (p :| [])) = simplify p
+simplify (Sum r ps) =
+    Sum r $ (reduce . simplify) =<< ps
   where
-    reduce (Sum ps') = reduce =<< ps'
-    reduce p         = [simplifyProj p]
-simplifyProj (Product ps) =
-    Product $ (reduce . simplifyProj) =<< ps
+    reduce (Sum _ ps') = reduce =<< ps'
+    reduce p           = [simplify p]
+simplify (Product r ps) =
+    Product r $ (reduce . simplify) =<< ps
   where
-    reduce (Product ps') = reduce =<< ps'
-    reduce p             = [simplifyProj p]
-simplifyProj (Sequence ps) =
-    Sequence $ (reduce . simplifyProj) =<< ps
+    reduce (Product _ ps') = reduce =<< ps'
+    reduce p               = [simplify p]
+simplify (Sequence r ps) =
+    Sequence r $ (reduce . simplify) =<< ps
   where
-    reduce (Sequence ps') = reduce =<< ps'
-    reduce p              = [simplifyProj p]
-simplifyProj p@Reference {}     = p
-
--- |Sort projects in the system order that minimizes cost
-prioritizeSys ∷ ProjectSystem → ProjectSystem
-prioritizeSys sys = everywhere (mkT $ prioritizeProj sys) sys
+    reduce (Sequence _ ps') = reduce =<< ps'
+    reduce p                = [simplify p]
+simplify p = p
 
 -- |Sort project in order that minimizes cost
-prioritizeProj ∷ ProjectSystem → ProjectExpr → ProjectExpr
-prioritizeProj sys (Sum ps)      =
-  let f p = getCost (cost sys' p) / getTrust (trust sys' p)
-      sys' = prioritizeSys sys
-  in Sum $ NE.sortWith (nanToInf . f) $ prioritizeProj sys' <$> ps
-prioritizeProj sys (Product ps)  =
-  let f p = getCost (cost sys' p) / (1 - getTrust (trust sys' p))
-      sys' = prioritizeSys sys
-  in Product $ NE.sortWith (nanToInf . f) $ prioritizeProj sys' <$> ps
-prioritizeProj sys (Sequence ps)  =
-  Sequence $ prioritizeProj sys <$> ps
-prioritizeProj _   p             = p
+prioritize ∷ ProjectExpr → ProjectExpr
+prioritize (Sum r ps)      =
+  let f p = getCost (cost p) / getTrust (trust p)
+  in Sum r $ NE.sortWith (nanToInf . f) $ prioritize <$> ps
+prioritize (Product r ps)  =
+  let f p = getCost (cost p) / (1 - getTrust (trust p))
+  in Product r $ NE.sortWith (nanToInf . f) $ prioritize <$> ps
+prioritize (Sequence r ps)  =
+  Sequence r $ prioritize <$> ps
+prioritize p        = p
 
 -- |Helper function to transform any Nan (not a number) to positive infinity
 nanToInf :: RealFloat a => a -> a

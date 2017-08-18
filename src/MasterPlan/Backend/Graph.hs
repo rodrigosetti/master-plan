@@ -16,13 +16,8 @@ module MasterPlan.Backend.Graph ( render
                                 , renderText
                                 , RenderOptions(..)) where
 
-import           Control.Applicative         ((<|>))
-import           Control.Monad.State
 import           Data.List                   (intersperse, isSuffixOf)
-import qualified Data.List.NonEmpty          as NE
-import qualified Data.Map                    as M
 import           Data.Maybe
-import           Data.Tree
 import           Diagrams.Backend.Rasterific
 import           Diagrams.Prelude            hiding (Product, Sum, render)
 import           Diagrams.TwoD.Text
@@ -83,77 +78,24 @@ textOverflow :: (TypeableFloat n, Renderable (Text n) b)
               -> QDiagram b V2 n Any
 textOverflow = textOverflow' FontSlantNormal FontWeightNormal
 
--- * Types
-
-data NodeType = SumNode | ProductNode | SequenceNode | AtomicNode
-
--- |Data type used by the tree
-data PNode = PNode (Maybe ProjectKey)
-                 (Maybe ProjectProperties)
-                 Cost
-                 Trust
-                 Progress
-          | NodeRef ProjectKey
-
-type RenderModel = Tree (NodeType, PNode)
-
-mkLeaf :: PNode -> RenderModel
-mkLeaf a = Node (AtomicNode, a) []
-
--- |Translates a ProjectSystem into a Tree PNode
-toRenderModel :: ProjectSystem -> ProjectKey -> State [ProjectKey] (Maybe RenderModel)
-toRenderModel sys rootK = case M.lookup rootK (bindings sys) of
-                            Nothing -> pure Nothing
-                            Just b  -> Just <$> bindingToRM rootK b
-  where
-    bindingToRM :: ProjectKey -> Binding -> State [ProjectKey] RenderModel
-    bindingToRM key (BindingExpr prop p) = projToRM p (Just key) (Just prop)
-    bindingToRM key (BindingAtomic prop c t p) = pure $ mkLeaf $ PNode (Just key)
-                                                                       (Just prop)
-                                                                       c t p
-
-    mkNode :: (PNode -> [RenderModel] -> RenderModel)
-           -> ProjectExpr
-           -> NE.NonEmpty ProjectExpr
-           -> Maybe ProjectKey
-           -> Maybe ProjectProperties
-           -> State [ProjectKey] RenderModel
-    mkNode f p ps key prop = f (PNode key prop
-                                     (cost sys p)
-                                     (trust sys p)
-                                     (progress sys p))
-                               <$> mapM (\p' -> projToRM p' Nothing Nothing) (NE.toList ps)
-
-    projToRM :: ProjectExpr -> Maybe ProjectKey -> Maybe ProjectProperties -> State [ProjectKey] RenderModel
-    projToRM p@(Sum ps) = mkNode (\x -> Node (SumNode, x)) p ps
-    projToRM p@(Sequence ps) = mkNode (\x -> Node (SequenceNode, x)) p ps
-    projToRM p@(Product ps) = mkNode (\x -> Node (ProductNode, x)) p ps
-    projToRM (Reference n) =
-      \k p -> case M.lookup n $ bindings sys of
-                Nothing -> pure $ Node (AtomicNode, PNode k (p <|> pure defaultProjectProps {title=getProjectKey n}) defaultCost defaultTrust defaultProgress) []
-                Just b -> do alreadyProcessed <- gets (n `elem`)
-                             if alreadyProcessed
-                               then pure $ Node (AtomicNode, NodeRef $ ProjectKey $ bindingTitle b) []
-                               else modify (n:) >> bindingToRM n b
-
 -- |how many leaf nodes
-leafCount :: Tree a -> Double
-leafCount (Node _ []) = 1
-leafCount (Node _ ts) = sum $ leafCount <$> ts
+leafCount :: Project a -> Double
+leafCount (Sum _ ps)      = sum $ leafCount <$> ps
+leafCount (Product _ ps)  = sum $ leafCount <$> ps
+leafCount (Sequence _ ps) = sum $ leafCount <$> ps
+leafCount _               = 1
 
 -- |Options for rendering
 data RenderOptions = RenderOptions { colorByProgress  :: Bool -- ^Whether to color boxes depending on progress
                                    , renderWidth      :: Integer -- ^The width of the output image
                                    , renderHeight     :: Integer -- ^The height of the output image
-                                   , rootKey          :: ProjectKey -- ^The name of the root project
-                                   , whitelistedProps :: [ProjAttribute] -- ^Properties that should be rendered
+                                   , whitelistedAttrs :: [ProjAttribute] -- ^Attributes that should be rendered
                                    } deriving (Eq, Show)
 
 -- | The main rendering function
-render ∷ FilePath -> RenderOptions-> ProjectSystem → IO ()
-render fp (RenderOptions colorByP w h rootK props) sys =
-  let noRootEroor = texterific $ "no project named \"" ++ getProjectKey rootK ++ "\" found."
-      dia = fromMaybe noRootEroor $ renderTree colorByP props <$> evalState (toRenderModel sys rootK) []
+render ∷ FilePath -> RenderOptions-> ProjectExpr → IO ()
+render fp (RenderOptions colorByP w h attrs) proj =
+  let dia = renderProject colorByP attrs proj
   in renderRasterific fp (dims2D (fromInteger w) (fromInteger h)) $ bgFrame 1 white $ centerXY dia
 
 -- |Render a multi-line text to file
@@ -162,18 +104,23 @@ renderText fp RenderOptions { renderWidth=w, renderHeight=h } ss =
   let dia = multilineText (0.1 :: Float) ss
   in renderRasterific fp (dims2D (fromInteger w) (fromInteger h)) $ bgFrame 1 white $ centerXY dia
 
-renderTree :: Bool -> [ProjAttribute] -> RenderModel -> QDiagram B V2 Double Any
-renderTree colorByP props (Node (_, n) [])    = alignL $ renderNode colorByP props n
-renderTree colorByP props x@(Node (ty, n) ts@(t:_)) =
-    (strutY (12 * leafCount x) <> alignL (centerY $ renderNode colorByP props n))
+renderProject :: Bool -> [ProjAttribute] -> ProjectExpr -> QDiagram B V2 Double Any
+renderProject _        _     (Annotated _)  = undefined
+renderProject colorByP attrs p@Atomic {}    = alignL $ renderNode colorByP attrs p
+renderProject colorByP attrs proj =
+    (strutY (12 * leafCount proj) <> alignL (centerY $ renderNode colorByP attrs proj))
     |||  (translateX 2 typeSymbol # withEnvelope (mempty :: D V2 Double) <> hrule 4 # lwO 2)
     |||  centerY (headBar === treeBar sizes)
-    |||  centerY (vcat $ map renderSubTree ts)
+    |||  centerY (vcat $ map renderSubTree ps)
   where
-    sizes = map ((* 6) . leafCount) ts
-    renderSubTree subtree = hrule 4 # lwO 2 ||| renderTree colorByP props subtree
+    sizes = fmap ((* 6) . leafCount) ps
+    renderSubTree subtree = hrule 4 # lwO 2 ||| renderProject colorByP attrs subtree
 
-    headBar = strutY $ leafCount t * 6
+    ps = subprojects proj
+
+    headBar = case ps of
+              t:_ -> strutY $ leafCount t * 6
+              []  -> mempty
 
     treeBar :: [Double] -> QDiagram B V2 Double Any
     treeBar (s1:s2:ss) = vrule s1 # lwO 2 === vrule s2 # lwO 2 === treeBar (s2:ss)
@@ -181,19 +128,23 @@ renderTree colorByP props x@(Node (ty, n) ts@(t:_)) =
     treeBar _ = mempty
 
     typeSymbol =
-      let txt = case ty of
-                    SumNode      -> text "+"
-                    ProductNode  -> text "x"
-                    SequenceNode -> text "->"
-                    AtomicNode   -> mempty
+      let txt = case proj of
+                    Sum {}      -> text "+"
+                    Product {}  -> text "x"
+                    Sequence {} -> text "->"
+                    _           -> mempty
       in txt # fontSizeL 2 # bold <> roundedRect 3 2 1 # fc white # lwO 1
 
-renderNode :: Bool -> [ProjAttribute] -> PNode -> QDiagram B V2 Double Any
-renderNode _        _     (NodeRef (ProjectKey n)) =
-   text n <> roundedRect 30 12 0.5 # lwO 2 # fc white # dashingN [0.005, 0.005] 0
-renderNode colorByP props (PNode _   prop c t p) =
+renderNode :: Bool -> [ProjAttribute] -> ProjectExpr -> QDiagram B V2 Double Any
+--renderNode _        _     (NodeRef (ProjectKey n)) =
+--   text n <> roundedRect 30 12 0.5 # lwO 2 # fc white # dashingN [0.005, 0.005] 0
+renderNode colorByP attrs proj =
    centerY nodeDia <> strutY 12
   where
+    c = cost proj
+    t = trust proj
+    p = progress proj
+    prop = properties proj
     nodeDia =
       let sections = if isJust titleHeader
                       then catMaybes [ headerSection
@@ -211,14 +162,17 @@ renderNode colorByP props (PNode _   prop c t p) =
                           l -> Just $ strutY 2 <> strutX nodeW <> mconcat (catMaybes l)
 
     givenProp :: ProjAttribute -> Maybe a -> Maybe a
-    givenProp pro x = if pro `elem` props then x else Nothing
+    givenProp pro x = if pro `elem` attrs then x else Nothing
 
     headerSection = case [progressHeader, titleHeader, costHeader] of
                         [Nothing, Nothing, Nothing] -> Nothing
                         l -> Just $ strutY 2 <> strutX nodeW <> mconcat (catMaybes l)
     progressHeader = givenProp PProgress $ Just $ displayProgress p # translateX (-nodeW/2 + 1)
-    titleHeader = givenProp PTitle $
-                    (centerXY . textOverflow' FontSlantNormal FontWeightBold 1 30 0.1 . title) <$> prop
+
+    titleHeader :: Maybe (QDiagram B V2 Double Any)
+    titleHeader = givenProp PTitle $ prop
+                                   >>= title
+                                   >>= (pure . centerXY . textOverflow' FontSlantNormal FontWeightBold 1 30 0.1)
     costHeader = givenProp PCost $ Just $ displayCost c # translateX (nodeW/2 - 1)
 
     descriptionSection, urlSection, bottomSection :: Maybe (QDiagram B V2 Double Any)
@@ -237,7 +191,7 @@ renderNode colorByP props (PNode _   prop c t p) =
     trustHeader = translateX (-nodeW/2+1) <$> trustHeader' leftText
 
     trustHeader' txt = case t of
-                          _  | PTrust `notElem` props -> Nothing
+                          _  | PTrust `notElem` attrs -> Nothing
                           t' | t' == defaultTrust -> Nothing
                           t' | t' == 0 -> Just $ txt "impossible"
                           _  -> Just $ txt ("trust = " ++ percentageText (getTrust t))
