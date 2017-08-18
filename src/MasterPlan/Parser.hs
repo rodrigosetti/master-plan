@@ -166,7 +166,8 @@ plan strictMode root =
       | otherwise = case lookup k bs of
                       Nothing
                        | strictMode -> fail $ "project \"" ++ k ++ "\" is undefined"
-                       | otherwise -> pure defaultAtomic
+                       | otherwise -> pure $ Atomic defaultProjectProps {title=Just k}
+                                                    defaultCost defaultTrust defaultProgress
                       Just p  -> resolveReferences bs (k:ks) p
    resolveReferences _ _ (Atomic r c t p) = pure $ Atomic r c t p
 

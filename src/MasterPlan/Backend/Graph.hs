@@ -16,6 +16,7 @@ module MasterPlan.Backend.Graph ( render
                                 , renderText
                                 , RenderOptions(..)) where
 
+import           Control.Monad.State
 import           Data.List                   (intersperse, isSuffixOf)
 import           Data.Maybe
 import           Diagrams.Backend.Rasterific
@@ -78,13 +79,6 @@ textOverflow :: (TypeableFloat n, Renderable (Text n) b)
               -> QDiagram b V2 n Any
 textOverflow = textOverflow' FontSlantNormal FontWeightNormal
 
--- |how many leaf nodes
-leafCount :: Project a -> Double
-leafCount (Sum _ ps)      = sum $ leafCount <$> ps
-leafCount (Product _ ps)  = sum $ leafCount <$> ps
-leafCount (Sequence _ ps) = sum $ leafCount <$> ps
-leafCount _               = 1
-
 -- |Options for rendering
 data RenderOptions = RenderOptions { colorByProgress  :: Bool -- ^Whether to color boxes depending on progress
                                    , renderWidth      :: Integer -- ^The width of the output image
@@ -95,7 +89,7 @@ data RenderOptions = RenderOptions { colorByProgress  :: Bool -- ^Whether to col
 -- | The main rendering function
 render ∷ FilePath -> RenderOptions-> ProjectExpr → IO ()
 render fp (RenderOptions colorByP w h attrs) proj =
-  let dia = renderProject colorByP attrs proj
+  let dia = evalState (renderProject colorByP attrs proj) []
   in renderRasterific fp (dims2D (fromInteger w) (fromInteger h)) $ bgFrame 1 white $ centerXY dia
 
 -- |Render a multi-line text to file
@@ -104,27 +98,33 @@ renderText fp RenderOptions { renderWidth=w, renderHeight=h } ss =
   let dia = multilineText (0.1 :: Float) ss
   in renderRasterific fp (dims2D (fromInteger w) (fromInteger h)) $ bgFrame 1 white $ centerXY dia
 
-renderProject :: Bool -> [ProjAttribute] -> ProjectExpr -> QDiagram B V2 Double Any
+-- |Monad that keep state of all projects rendered so far
+type AvoidRedundancy = State [ProjectExpr]
+
+renderProject :: Bool -> [ProjAttribute] -> ProjectExpr -> AvoidRedundancy (QDiagram B V2 Double Any)
 renderProject _        _     (Annotated _)  = undefined
-renderProject colorByP attrs p@Atomic {}    = alignL $ renderNode colorByP attrs p
+renderProject colorByP attrs p@Atomic {}    = pure $ alignL $ renderNode colorByP attrs p
 renderProject colorByP attrs proj =
-    (strutY (12 * leafCount proj) <> alignL (centerY $ renderNode colorByP attrs proj))
-    |||  (translateX 2 typeSymbol # withEnvelope (mempty :: D V2 Double) <> hrule 4 # lwO 2)
-    |||  centerY (headBar === treeBar sizes)
-    |||  centerY (vcat $ map renderSubTree ps)
+    do alreadyRendered <- gets (proj `elem`)
+       case title =<< properties proj of
+         Just n | alreadyRendered -> pure $ renderReference n
+         _ -> do modify (proj:)
+                 subtrees <- mapM renderSubTree $ subprojects proj
+                 let sizesY = map (diameter unitY) subtrees
+                 let headBar = case sizesY of
+                                []  -> mempty
+                                s:_ -> strutY (s/2)
+                 pure $ (strutY (sum sizesY) <> alignL (centerY $ renderNode colorByP attrs proj))
+                        |||  (translateX 2 typeSymbol # withEnvelope (mempty :: D V2 Double) <> hrule 4 # lwO 2)
+                        |||  centerY (headBar === treeBar sizesY)
+                        |||  centerY (vcat subtrees)
   where
-    sizes = fmap ((* 6) . leafCount) ps
-    renderSubTree subtree = hrule 4 # lwO 2 ||| renderProject colorByP attrs subtree
-
-    ps = subprojects proj
-
-    headBar = case ps of
-              t:_ -> strutY $ leafCount t * 6
-              []  -> mempty
+    renderSubTree subtree = (hrule 4 # lwO 2 |||) <$> renderProject colorByP attrs subtree
+    renderReference refName = text refName <> roundedRect 30 2 0.5 # lwO 2 # fc white # dashingN [0.005, 0.005] 0
 
     treeBar :: [Double] -> QDiagram B V2 Double Any
-    treeBar (s1:s2:ss) = vrule s1 # lwO 2 === vrule s2 # lwO 2 === treeBar (s2:ss)
-    treeBar [s1] = strutY s1
+    treeBar (s1:s2:ss) = vrule (s1/2) # lwO 2 === vrule (s2/2) # lwO 2 === treeBar (s2:ss)
+    treeBar [s1] = strutY (s1/2)
     treeBar _ = mempty
 
     typeSymbol =
@@ -133,13 +133,11 @@ renderProject colorByP attrs proj =
                     Product {}  -> text "x"
                     Sequence {} -> text "->"
                     _           -> mempty
-      in txt # fontSizeL 2 # bold <> roundedRect 3 2 1 # fc white # lwO 1
+      in txt # fontSizeL 2 # bold <> extrudeTop 2 (extrudeBottom 2 (roundedRect 3 2 1 # fc white # lwO 1))
 
 renderNode :: Bool -> [ProjAttribute] -> ProjectExpr -> QDiagram B V2 Double Any
---renderNode _        _     (NodeRef (ProjectKey n)) =
---   text n <> roundedRect 30 12 0.5 # lwO 2 # fc white # dashingN [0.005, 0.005] 0
 renderNode colorByP attrs proj =
-   centerY nodeDia <> strutY 12
+   centerY $ extrudeTop 2 $ extrudeBottom 2 nodeDia
   where
     c = cost proj
     t = trust proj
