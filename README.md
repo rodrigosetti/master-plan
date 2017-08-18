@@ -48,9 +48,9 @@ planning progress can be recorded.
 ```
 master-plan - project management tool for hackers
 
-Usage: master-plan [FILENAME] [-o|--output FILENAME] [--progress-below N]
-                   [--render-parse-error] [-c|--color] [-w|--width NUMBER]
-                   [--height NUMBER] [-r|--root NAME]
+Usage: master-plan [FILENAME] [-o|--output FILENAME] [-r|--root NAME]
+                   [--progress-below N] [--render-parse-error] [--strict]
+                   [-c|--color] [-w|--width NUMBER] [--height NUMBER]
                    [--hide title|description|url|owner|cost|trust|progress]
   See documentation on how to write project plan files
 
@@ -58,13 +58,14 @@ Available options:
   FILENAME                 plan file to read from (default from stdin)
   -o,--output FILENAME     output file name (.png, .tif, .bmp, .jpg and .pdf
                            supported)
+  -r,--root NAME           name of the root project definition (default: "root")
   --progress-below N       only display projects which progress is < N%
   --render-parse-error     instead of printing parsing errors, render as an
                            image
+  --strict                 strict parsing: every project has to be defined
   -c,--color               color each project by progress
   -w,--width NUMBER        width of the output image
   --height NUMBER          height of the output image
-  -r,--root NAME           name of the root project definition (default: "root")
   --hide title|description|url|owner|cost|trust|progress
                            hide a particular property
   -h,--help                Show this help text

@@ -1,5 +1,5 @@
 name:                master-plan
-version:             0.3.0
+version:             0.3.1
 synopsis:            The project management tool for hackers
 description:         Master Plan is a tool that parses files that describes
                      projects using a simple and powerful syntax in which
