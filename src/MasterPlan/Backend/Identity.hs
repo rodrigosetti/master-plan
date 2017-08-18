@@ -15,7 +15,6 @@ import           Control.Monad      (when)
 import           Control.Monad.RWS  hiding (Product, Sum)
 import           Data.List          (intersperse)
 import qualified Data.List.NonEmpty as NE
-import           Data.Maybe         (isJust)
 import           Data.Monoid        ((<>))
 import qualified Data.Text          as T
 import           MasterPlan.Data
@@ -28,13 +27,17 @@ render proj whitelist =
    snd $ evalRWS (renderDefinition "root" proj) whitelist []
  where
    renderDefinition key p =
-     do tell $ T.pack key <> " "
+     do tell $ T.pack key
         when (hasAttribute p) $ do
-           tell "{\n"
+           tell " {\n"
            renderAttr p
-           tell "}\n"
-        expression False p
+           tell "}"
+        case p of
+          Atomic {}    -> pure ()
+          Annotated {} -> pure ()
+          p'           -> tell " " >> expression False p'
         tell "\n;"
+        modify $ filter ((/= key) . fst)
         remainingBindings <- get
         case remainingBindings of
           []        -> pure ()
@@ -79,10 +82,14 @@ render proj whitelist =
                                             || t /= defaultTrust
                                             || p  /= defaultProgress
 
-   hasProperty props =  isJust (title props)
-                     || isJust (description props)
-                     || isJust (owner props)
-                     || isJust (url props)
+   hasProperty props =  isNonEmpty (title props)
+                     || isNonEmpty (description props)
+                     || isNonEmpty (owner props)
+                     || isNonEmpty (url props)
+
+   isNonEmpty Nothing   = False
+   isNonEmpty (Just "") = False
+   isNonEmpty (Just _)  = True
 
    percentage n = T.pack $ show (n * 100) <> "%"
 
@@ -98,7 +105,9 @@ render proj whitelist =
 
    renderProps :: ProjectProperties -> RenderMonad a ()
    renderProps p = do let maybeRender :: T.Text -> Maybe String -> RenderMonad a ()
-                          maybeRender n = maybe (pure ()) (\x -> tell $ n <> " " <> T.pack (show x) <> "\n")
+                          maybeRender _ Nothing   = pure ()
+                          maybeRender _ (Just "") = pure ()
+                          maybeRender n (Just x)  = tell $ n <> " " <> T.pack (show x) <> "\n"
                       maybeRender "title" (title p)
                       maybeRender "description" (description p)
                       maybeRender "url" (url p)

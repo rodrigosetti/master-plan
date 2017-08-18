@@ -19,10 +19,17 @@ spec =
 
     let allProps = [minBound :: ProjAttribute ..]
 
+    let asRoot (Atomic r c t p) = Atomic r {title=Just "root"} c t p
+        asRoot (Sum r ps)       = Sum r {title=Just "root"} ps
+        asRoot (Sequence r ps)  = Sequence r {title=Just "root"} ps
+        asRoot (Product r ps)   = Product r {title=Just "root"} ps
+        asRoot p                = p
+
     prop "rendered should be parseable" $ do
       let renderedIsParseable ∷ ProjectExpr → Property
           renderedIsParseable p =
-            let rendered = render p allProps
+            let p' = simplify p
+                rendered = render p' allProps
              in counterexample (T.unpack rendered) $ isRight (runParser False "test1" rendered "root")
 
       withMaxSuccess 50 renderedIsParseable
@@ -31,7 +38,7 @@ spec =
 
       let propertyParseAndOutputIdentity ∷ ProjectExpr → Property
           propertyParseAndOutputIdentity p =
-            let p' = simplify p
+            let p' = asRoot $ simplify p
                 parsed = runParser False "test2" (render p' allProps) "root"
              in isRight parsed ==> parsed === Right p'
 
@@ -72,17 +79,17 @@ spec =
       let program2 = wrap [ "root = a + b"
                           , "a = x * root" ]
 
-      runParser False "recursive2" program2 "root" `shouldSatisfy` expectedError "a"
+      runParser False "recursive2" program2 "root" `shouldSatisfy` expectedError "root"
 
-      let program3 = wrap [ "xxx = x + y"
+      let program3 = wrap [ "xxx = x + a"
                           , "a = b * c"
                           , "c = d -> a" ]
 
-      runParser False "recursive3" program3 "xxx" `shouldSatisfy` expectedError "c"
+      runParser False "recursive3" program3 "xxx" `shouldSatisfy` expectedError "a"
 
       let program4 = wrap [ "yyy = a + y"
                           , "d = x + yyy"
                           , "a = b * c"
                           , "c = d -> e" ]
 
-      runParser False "recursive4" program4 "yyy" `shouldSatisfy` expectedError "c"
+      runParser False "recursive4" program4 "yyy" `shouldSatisfy` expectedError "yyy"
