@@ -46,10 +46,11 @@ library
     ghc-options:         -Wall
     default-extensions:  UnicodeSyntax
     build-depends:       base >= 4.5 && < 5
+                       , scientific
                        , diagrams
                        , diagrams-lib
                        , diagrams-rasterific
-                       , megaparsec >= 6.0.0
+                       , megaparsec
                        , mtl
                        , text
                        , syb

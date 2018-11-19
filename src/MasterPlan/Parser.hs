@@ -15,6 +15,7 @@ module MasterPlan.Parser (ProjectKey, runParser) where
 import           Control.Monad.State
 import qualified Data.List.NonEmpty         as NE
 import           Data.Maybe                 (fromMaybe, isJust)
+import qualified Data.Scientific            as Sci
 import qualified Data.Text                  as T
 import           Data.Void
 import           MasterPlan.Data
@@ -58,13 +59,10 @@ stringLiteral :: Parser String
 stringLiteral = char '"' >> manyTill L.charLiteral (char '"')
 
 percentage :: Parser Float
-percentage = do n <- L.float <?> "percentage value"
+percentage = do n <- Sci.toRealFloat <$> L.scientific <?> "percentage value"
                 when (n > 100) $ fail $ "number " ++ show n ++ " is not within (0,100) range"
                 void $ symbol "%"
                 pure $ n / 100
-
-nonNegativeNumber :: Parser Float
-nonNegativeNumber = L.float
 
 -- |Parses the part of right-hand-side after the optional properties
 --  (literal string title or properties between curly brackets)
@@ -124,7 +122,7 @@ binding key = do (props, mc, mt, mp) <- try simpleTitle <|> try bracketAttribute
                            s <- stringLiteral <?> "owner"
                            attributes (props {owner=Just s}) mc mt mp
               PCost -> do when (isJust mc) $ fail "redefinition of cost"
-                          c <- Cost <$> nonNegativeNumber <?> "cost"
+                          c <- Cost <$> Sci.toRealFloat <$> L.scientific <?> "cost"
                           attributes props (Just c) mt mp
               PTrust -> do when (isJust mt) $ fail "redefinition of cost"
                            t <- Trust <$> percentage <?> "trust"
